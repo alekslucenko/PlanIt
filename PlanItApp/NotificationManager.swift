@@ -67,6 +67,9 @@ class NotificationManager: NSObject, ObservableObject {
     // Mute settings for different chats
     private var chatMuteSettings: [String: (inApp: Bool, push: Bool)] = [:]
     
+    // Auth service reference
+    private var authService: AuthenticationService?
+    
     override init() {
         super.init()
         checkNotificationPermission()
@@ -598,6 +601,12 @@ class NotificationManager: NSObject, ObservableObject {
         } catch {
             print("❌ Error clearing notifications: \(error)")
         }
+    }
+    
+    // MARK: - Service Configuration
+    func setAuthService(_ authService: AuthenticationService) {
+        self.authService = authService
+        print("✅ NotificationManager: AuthService configured")
     }
 }
 

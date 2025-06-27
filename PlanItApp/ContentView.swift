@@ -38,10 +38,19 @@ struct ContentView: View {
                     .environmentObject(locationManager)
                 
             case .authenticated:
-                ModernMainTabView(locationManager: locationManager)
-                    .environmentObject(authService)
-                    .environmentObject(NotificationManager.shared)
-                    .environmentObject(UserFingerprintManager.shared)
+                // FIXED: Show loading screen while initializing services
+                ZStack {
+                    ModernMainTabView(locationManager: locationManager)
+                        .environmentObject(authService)
+                        .environmentObject(NotificationManager.shared)
+                        .environmentObject(UserFingerprintManager.shared)
+                    
+                    // Show loading screen briefly while services initialize
+                    if isProcessingOnboardingCompletion {
+                        LoadingScreen()
+                            .transition(.opacity)
+                    }
+                }
             }
         }
         .onAppear {
@@ -49,19 +58,30 @@ struct ContentView: View {
             determineInitialState()
         }
         .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
+            print("🎯 ContentView: Authentication changed to: \(isAuthenticated)")
+            
             if isAuthenticated {
-                // Only transition if we're not in the middle of onboarding completion
-                if !isProcessingOnboardingCompletion {
-                    // Check if we have completed onboarding
-                    if onboardingManager.hasCompletedOnboarding {
-                        appState = .authenticated
-                        initializeUserFingerprint()
+                // User just authenticated
+                print("🎯 ContentView: User authenticated - transitioning to main app...")
+                
+                // Show loading screen immediately
+                isProcessingOnboardingCompletion = true
+                
+                // Small delay to ensure loading screen shows
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    // Transition to authenticated state
+                    appState = .authenticated
+                    initializeUserFingerprint()
+                    
+                    // Mark onboarding as completed for existing users
+                    if !onboardingManager.hasCompletedOnboarding {
+                        print("🎯 ContentView: Marking onboarding as completed for existing user")
+                        onboardingManager.setHasCompletedOnboarding(true)
                     }
-                    // If onboarding not completed but authenticated, stay in onboarding
-                    // This handles cases where user signs in but hasn't completed onboarding
                 }
             } else if !isAuthenticated && appState == .authenticated {
                 // User logged out, return to welcome screen
+                print("🎯 ContentView: User logged out, returning to initial state")
                 appState = .initial
                 isProcessingOnboardingCompletion = false
             }
@@ -82,20 +102,28 @@ struct ContentView: View {
         print("🎯 ContentView: Onboarding completed: \(onboardingManager.hasCompletedOnboarding)")
         print("🎯 ContentView: User authenticated: \(authService.isAuthenticated)")
         
-        // If onboarding has never been completed locally → always start with onboarding (regardless of auth status)
-        guard onboardingManager.hasCompletedOnboarding else {
-            print("🎯 ContentView: Starting onboarding - not completed")
-            appState = .onboarding
-            return
-        }
-
-        // User completed onboarding previously
+        // FIXED: If user is authenticated, always go to main app (they're an existing user)
         if authService.isAuthenticated {
             print("🎯 ContentView: User is authenticated, going to main app")
             appState = .authenticated
             initializeUserFingerprint()
+            
+            // Ensure onboarding is marked as completed for authenticated users
+            if !onboardingManager.hasCompletedOnboarding {
+                print("🎯 ContentView: Marking onboarding as completed for authenticated user")
+                onboardingManager.setHasCompletedOnboarding(true)
+            }
+            return
+        }
+        
+        // User is not authenticated
+        // If onboarding has never been completed locally → start with onboarding
+        if !onboardingManager.hasCompletedOnboarding {
+            print("🎯 ContentView: Starting onboarding - not completed")
+            appState = .onboarding
         } else {
-            print("🎯 ContentView: User not authenticated, showing welcome")
+            // User completed onboarding previously but isn't authenticated
+            print("🎯 ContentView: Onboarding completed but not authenticated, showing welcome")
             appState = .initial
         }
     }
@@ -103,9 +131,23 @@ struct ContentView: View {
     private func initializeUserFingerprint() {
         // Initialize user fingerprint manager for recommendation engine
         Task {
+            await MainActor.run {
+                isProcessingOnboardingCompletion = true
+            }
+            
             await UserFingerprintManager.shared.startListening()
             await UserFingerprintManager.shared.incrementSessionCount()
-            print("🧬 User fingerprint tracking initialized")
+            
+            // Initialize notification manager with auth service
+            NotificationManager.shared.setAuthService(authService)
+            
+            // Give services time to initialize
+            try? await Task.sleep(for: .seconds(1.5))
+            
+            await MainActor.run {
+                isProcessingOnboardingCompletion = false
+                print("🧬 User fingerprint tracking initialized")
+            }
         }
     }
 }
@@ -584,7 +626,8 @@ struct EnhancedProfileView: View {
             LoginView(
                 onboardingData: nil,
                 userName: "",
-                onAuthComplete: {}
+                onAuthComplete: {},
+                isForExistingUser: true
             )
                 .environmentObject(authService)
         }
@@ -821,7 +864,8 @@ struct InitialWelcomeView: View {
             LoginView(
                 onboardingData: nil,
                 userName: "",
-                onAuthComplete: {}
+                onAuthComplete: {},
+                isForExistingUser: true
             )
                 .environmentObject(authService)
         }

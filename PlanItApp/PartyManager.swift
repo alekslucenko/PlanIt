@@ -74,6 +74,9 @@ final class PartyManager: ObservableObject {
         
         // Setup appropriate listeners based on mode
         if isHostMode {
+            // Disable nearby party discovery in host mode
+            partiesListener?.remove()
+            partiesListener = nil
             setupHostListener()
             Task {
                 await loadHostParties()
@@ -83,6 +86,11 @@ final class PartyManager: ObservableObject {
             hostListener?.remove()
             hostParties = []
             hostAnalytics = nil
+
+            // Re-enable nearby party discovery for regular users
+            if partiesListener == nil {
+                setupPartiesListener()
+            }
         }
         
         print("✅ Host mode UI refresh triggered")
@@ -103,12 +111,19 @@ final class PartyManager: ObservableObject {
     }
     
     private func setupPartiesListener() {
+        // If the app is currently in host/business mode we don't need nearby party discovery.
+        guard !isHostMode else {
+            print("⏸️ Skipping parties listener – host mode active")
+            return
+        }
+
         guard let userId = Auth.auth().currentUser?.uid else { return }
         
-        // Listen to all nearby parties - for regular users to discover parties
+        // FIXED: Listen to all nearby parties with proper error handling for missing indexes
+        // Try the full query first, fallback to simpler queries if index is missing
         partiesListener = db.collection("parties")
-            .whereField("status", isEqualTo: "upcoming")
             .whereField("isPublic", isEqualTo: true)
+            .whereField("status", isEqualTo: "upcoming")
             .order(by: "startDate", descending: false)
             .limit(to: 50)
             .addSnapshotListener { [weak self] snapshot, error in
@@ -116,6 +131,12 @@ final class PartyManager: ObservableObject {
                 
                 if let error = error {
                     print("❌ Error listening to parties: \(error)")
+                    
+                    // Check if this is an index error and provide fallback
+                    if error.localizedDescription.contains("index") {
+                        print("🔧 Index missing - trying fallback query")
+                        self.setupFallbackPartiesListener()
+                    }
                     return
                 }
                 
@@ -172,6 +193,57 @@ final class PartyManager: ObservableObject {
     func setupRealTimePartyUpdates() {
         // Additional real-time updates for party changes
         print("🔄 Setting up real-time party updates")
+    }
+    
+    // MARK: - Fallback Parties Listener (for when composite index is missing)
+    
+    private func setupFallbackPartiesListener() {
+        print("🔄 Setting up fallback parties listener (simpler query)")
+        
+        // Remove existing listener
+        partiesListener?.remove()
+        
+        // Use simpler query that doesn't require composite index
+        partiesListener = db.collection("parties")
+            .whereField("isPublic", isEqualTo: true)
+            .limit(to: 50)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+                
+                if let error = error {
+                    print("❌ Error with fallback parties listener: \(error)")
+                    return
+                }
+                
+                guard let documents = snapshot?.documents else { 
+                    print("⚠️ No party documents found in fallback")
+                    return 
+                }
+                
+                Task { @MainActor in
+                    let allParties = documents.compactMap { doc -> Party? in
+                        do {
+                            return try doc.data(as: Party.self)
+                        } catch {
+                            print("❌ Error decoding party in fallback: \(error)")
+                            return nil
+                        }
+                    }
+                    
+                    // Filter and sort manually since we can't do it in the query
+                    let filteredParties = allParties
+                        .filter { $0.status == .upcoming }
+                        .sorted { $0.startDate < $1.startDate }
+                    
+                    self.nearbyParties = filteredParties
+                    print("✅ Loaded \(filteredParties.count) nearby parties from Firestore (fallback)")
+                    
+                    // If no parties exist, create some sample data for testing
+                    if filteredParties.isEmpty {
+                        await self.createSamplePartiesIfNeeded()
+                    }
+                }
+            }
     }
     
     // MARK: - Host Mode Operations
@@ -624,6 +696,46 @@ final class PartyManager: ObservableObject {
         ])
         
         print("✅ Full RSVP created successfully")
+    }
+    
+    // MARK: - RSVP Cancellation
+    
+    func cancelRSVP(rsvpId: String) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "RSVPError", code: 0, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"])
+        }
+        
+        isLoading = true
+        defer { isLoading = false }
+        
+        // Get the RSVP to cancel
+        guard let rsvp = userRSVPs.first(where: { $0.id == rsvpId }) else {
+            throw NSError(domain: "RSVPError", code: 2, userInfo: [NSLocalizedDescriptionKey: "RSVP not found"])
+        }
+        
+        try await performanceService.optimizeDatabaseOperation {
+            // Update RSVP status to cancelled
+            try await self.db.collection("rsvps").document(rsvpId).updateData([
+                "status": "cancelled",
+                "updatedAt": FieldValue.serverTimestamp()
+            ])
+        }
+        
+        // Decrease party attendance count
+        try await performanceService.optimizeDatabaseOperation {
+            try await self.db.collection("parties").document(rsvp.partyId).updateData([
+                "currentAttendees": FieldValue.increment(Int64(-rsvp.quantity))
+            ])
+        }
+        
+        // Track cancellation event
+        await trackPartyEvent(rsvp.partyId, event: "rsvp_cancelled", data: [
+            "rsvpId": rsvpId,
+            "quantity": rsvp.quantity,
+            "timestamp": FieldValue.serverTimestamp()
+        ])
+        
+        print("✅ RSVP cancelled successfully")
     }
     
     // MARK: - Party Creation (for PartyCreationView)

@@ -48,6 +48,7 @@ class PlaceDataService: ObservableObject {
     // Cache management with TTL (Time To Live) - 1 hour default
     private var cacheTimestamps: [String: Date] = [:]
     private let cacheTTL: TimeInterval = 3600 // 1 hour
+    private let dailyTTL: TimeInterval = 86_400 // 24 hours
     private let maxCacheSize = 500 // Maximum places to keep in memory
     
     // UserDefaults keys for persistence
@@ -68,6 +69,10 @@ class PlaceDataService: ObservableObject {
     // Location-based caching
     private var lastLocation: CLLocation?
     private var cacheExpirationTime: TimeInterval = 900 // 15 minutes
+    
+    /// Indicates whether the Explore functionality that relies on this service is currently visible to the user.
+    /// Heavy network requests will only run when this flag is `true`.
+    @Published var isActive: Bool = false
     
     private init() {
         print("🏪 PlaceDataService initialized")
@@ -175,9 +180,23 @@ class PlaceDataService: ObservableObject {
         }
     }
     
+    // MARK: - Fresh Cache Helper
+    func hasFreshCache(for locationKey: String, maxAge: TimeInterval = 86_400) -> Bool {
+        if let ts = cacheTimestamps[locationKey] {
+            return Date().timeIntervalSince(ts) < maxAge
+        }
+        return false
+    }
+    
     // MARK: - Advanced Infinite Scroll Implementation
     
     func loadPlacesForAllCategories(at location: CLLocation, radius: Double = 2.0, initialLoad: Bool = true) {
+        // Skip heavy network work when service is not active (e.g. user is on a different tab)
+        guard isActive else {
+            print("⏸️ PlaceDataService inactive – skipping loadPlacesForAllCategories")
+            return
+        }
+        
         let newLocationKey = generateLocationKey(for: location, radius: radius)
         
         // Clear data immediately if location changed
@@ -186,6 +205,14 @@ class PlaceDataService: ObservableObject {
             currentLocationKey = newLocationKey
             currentRadius = radius
             print("🔄 Location changed to: \(newLocationKey)")
+        }
+        
+        // If we already have a fresh cache ( < 24h ) skip network work and just publish
+        if hasFreshCache(for: newLocationKey, maxAge: dailyTTL) {
+            print("📦 Using fresh cached places — skip network fetch")
+            loadCachedPlacesFirst(for: newLocationKey)
+            isLoading = false
+            return
         }
         
         print("🏗️ Loading places for all categories at: \(location.coordinate) with radius: \(radius)")
@@ -225,6 +252,11 @@ class PlaceDataService: ObservableObject {
     }
     
     func loadMorePlaces(for category: PlaceCategory, location: CLLocation, radius: Double = 2.0) {
+        guard isActive else {
+            print("⏸️ PlaceDataService inactive – skipping loadMorePlaces for \(category.rawValue)")
+            return
+        }
+        
         let locationKey = generateLocationKey(for: location, radius: radius)
         
         // Don't load more if location changed
@@ -981,5 +1013,15 @@ class PlaceDataService: ObservableObject {
         }
         // Fallback to name comparison when ID is missing
         return array.contains(where: { $0.name.lowercased() == newPlace.name.lowercased() })
+    }
+    
+    /// Call when a screen that uses `PlaceDataService` becomes visible.
+    func activate() {
+        isActive = true
+    }
+    
+    /// Call when the screen disappears so that unnecessary background API work is avoided.
+    func deactivate() {
+        isActive = false
     }
 } 

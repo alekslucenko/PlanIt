@@ -11,7 +11,26 @@ import UIKit
 final class GeminiAIService: ObservableObject {
     static let shared = GeminiAIService()
     
-    private let apiKey = "AIzaSyC7w0qOp4UOIFdRAoSNHXh4pYjXNZlzQHw"
+    // FIXED: Secure API key configuration - no more hardcoded keys
+    private var apiKey: String {
+        // Try environment variable first
+        if let envKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"], !envKey.isEmpty {
+            return envKey
+        }
+        
+        // Try Info.plist
+        if let path = Bundle.main.path(forResource: "Info", ofType: "plist"),
+           let plist = NSDictionary(contentsOfFile: path),
+           let key = plist["GEMINI_API_KEY"] as? String, !key.isEmpty {
+            return key
+        }
+        
+        // Fallback - but this should be configured properly
+        print("⚠️ No Gemini API key found in environment or Info.plist")
+        print("🔧 Please set GEMINI_API_KEY environment variable or add it to Info.plist")
+        return ""
+    }
+    
     private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
     
     private let db = Firestore.firestore()
@@ -19,6 +38,7 @@ final class GeminiAIService: ObservableObject {
     @Published var isLoading = false
     @Published var lastRecommendations: [AIRecommendation] = []
     @Published var lastGenerationTime = Date()
+    @Published var isConfigured: Bool = false
     
     // Advanced analytics integration
     private let userTrackingService = UserTrackingService.shared
@@ -80,6 +100,24 @@ final class GeminiAIService: ObservableObject {
     
     private init() {
         print("🤖 Enhanced GeminiAIService initialized with comprehensive analytics")
+        checkConfiguration()
+    }
+    
+    // MARK: - Configuration Check
+    
+    private func checkConfiguration() {
+        isConfigured = !apiKey.isEmpty
+        if isConfigured {
+            print("✅ Gemini API configured successfully")
+        } else {
+            print("❌ Gemini API not configured - recommendations will use fallback data")
+            print("🔧 To fix: Set GEMINI_API_KEY environment variable or add to Info.plist")
+        }
+    }
+    
+    func validateConfiguration() -> Bool {
+        checkConfiguration()
+        return isConfigured
     }
     
     // MARK: - Enhanced Recommendation Generation
@@ -1158,9 +1196,11 @@ final class GeminiAIService: ObservableObject {
     
     /// Make a request to Gemini AI API
     private func makeGeminiRequest(prompt: String) async -> String {
-        guard !apiKey.isEmpty else {
+        let currentApiKey = apiKey
+        guard !currentApiKey.isEmpty else {
             print("❌ Gemini API key not configured")
-            return "{\"error\": \"API key not configured\"}"
+            print("🔧 To fix: Set GEMINI_API_KEY environment variable or add to Info.plist")
+            return createFallbackResponse()
         }
         
         // Truncate prompt if too long to avoid 400 errors

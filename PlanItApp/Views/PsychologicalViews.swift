@@ -145,8 +145,15 @@ struct ExploreView: View {
         }
         .onAppear {
             Task {
+                // Activate heavy services while this view is on screen
+                PlaceDataService.shared.activate()
+                DynamicCategoryManager.shared.activate()
                 await loadInitialData()
             }
+        }
+        .onDisappear {
+            PlaceDataService.shared.deactivate()
+            DynamicCategoryManager.shared.deactivate()
         }
     }
     

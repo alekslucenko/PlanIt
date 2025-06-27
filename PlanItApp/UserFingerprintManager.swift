@@ -248,9 +248,21 @@ final class UserFingerprintManager: ObservableObject {
                 DispatchQueue.main.async {
                     let previousFingerprint = self.fingerprint
                     self.fingerprint = decoded
-                    self.lastFingerprintUpdate = Date()
                     
                     print("🧬 Fingerprint updated – Triggering downstream consumers")
+                    
+                    // FIXED: Add debouncing and prevent feedback loops
+                    // Only trigger refresh if this is a significant change AND enough time has passed
+                    if let lastUpdate = self.lastFingerprintUpdate,
+                       Date().timeIntervalSince(lastUpdate) < 2.0 { // FIXED: Skip if LESS than 2 seconds
+                        print("🔄 Fingerprint refresh too recent, skipping...")
+                        // Update timestamp but don't trigger refresh
+                        self.lastFingerprintUpdate = Date()
+                        return
+                    }
+                    
+                    // Update timestamp
+                    self.lastFingerprintUpdate = Date()
                     
                     // Check if this is a significant change that should trigger re-recommendations
                     if self.shouldTriggerRecommendationRefresh(
@@ -290,14 +302,25 @@ final class UserFingerprintManager: ObservableObject {
         current: AppUserFingerprint
     ) -> Bool {
         // If this is the first fingerprint load, don't trigger refresh
-        guard let previous = previous else { return false }
+        guard let previous = previous else { 
+            print("🔄 First fingerprint load - skipping refresh trigger")
+            return false 
+        }
         
-        // Check for significant changes
-        let likesChanged = previous.likes != current.likes
-        let dislikesChanged = previous.dislikes != current.dislikes
-        let interactionLogsChanged = (previous.interactionLogs?.count ?? 0) != (current.interactionLogs?.count ?? 0)
+        // FIXED: Be more conservative about what triggers refresh
+        // Only trigger for significant behavioral changes, not metadata changes
+        let likesChanged = (previous.likes?.count ?? 0) != (current.likes?.count ?? 0)
+        let dislikesChanged = (previous.dislikes?.count ?? 0) != (current.dislikes?.count ?? 0)
+        let interactionCountChanged = (previous.interactionLogs?.count ?? 0) != (current.interactionLogs?.count ?? 0)
         
-        return likesChanged || dislikesChanged || interactionLogsChanged
+        // Only trigger if there are actual new interactions, not just data updates
+        let shouldTrigger = likesChanged || dislikesChanged || interactionCountChanged
+        
+        if shouldTrigger {
+            print("🔄 Fingerprint change: likes=\(likesChanged), dislikes=\(dislikesChanged), interactions=\(interactionCountChanged)")
+        }
+        
+        return shouldTrigger
     }
     
     /// Notifies the recommendation manager that a refresh is needed

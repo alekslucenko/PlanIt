@@ -67,7 +67,10 @@ struct EnhancedOnboardingView: View {
                     onboardingManager.setUserName(userName)
                     nextStep()
                 },
-                onShowLogin: { showingLogin = true }
+                onShowLogin: { 
+                    print("🔑 EnhancedOnboardingView: Showing login for existing user")
+                    showingLogin = true 
+                }
             )
         case 2:
             WelcomeView(
@@ -140,16 +143,18 @@ struct EnhancedOnboardingView: View {
                         Task {
                             await finalizeOnboarding(with: data)
                         }
-                    }
+                    },
+                    isForExistingUser: false
                 )
                 .environmentObject(authService)
             }
         }
         .sheet(isPresented: $showingLogin) {
             LoginView(
-                onboardingData: currentOnboardingData,
+                onboardingData: nil,
                 userName: userName,
-                onAuthComplete: handleLoginComplete
+                onAuthComplete: handleLoginComplete,
+                isForExistingUser: true
             )
             .environmentObject(authService)
         }
@@ -207,10 +212,11 @@ struct EnhancedOnboardingView: View {
         print("🔑 EnhancedOnboardingView: Authentication completed, processing onboarding...")
         
         if authService.isAuthenticated {
-            print("🎯 EnhancedOnboardingView: Finalizing onboarding data...")
-            Task {
-                await finalizeOnboarding(with: currentOnboardingData)
-            }
+            print("🎯 EnhancedOnboardingView: User successfully authenticated")
+            // FIXED: Don't try to finalize onboarding data for existing users
+            // Just mark onboarding as complete and let ContentView handle navigation
+            onboardingManager.setHasCompletedOnboarding(true)
+            print("🎯 EnhancedOnboardingView: Marked onboarding as completed for existing user")
         }
     }
     

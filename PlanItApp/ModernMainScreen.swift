@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreLocation
+import Combine
 
 struct ModernMainScreen: View {
     @State private var selectedCategory: PlaceCategory? = nil
@@ -10,6 +11,8 @@ struct ModernMainScreen: View {
     @State private var selectedPlace: Place?
     @State private var showingPlaceDetail = false
     @State private var refreshTrigger = false
+    @State private var showSkeleton = true
+    @State private var cancellables = Set<AnyCancellable>()
     
     @ObservedObject var locationManager: LocationManager
     @StateObject private var locationSearch = LocationSearchService()
@@ -22,8 +25,50 @@ struct ModernMainScreen: View {
     @StateObject private var theme = ThemeManager.shared
     @StateObject private var geminiService = GeminiAIService.shared
     @StateObject private var reactionManager = ReactionManager.shared
+    @StateObject private var partyManager = PartyManager.shared
     @State private var aiGeneratedCategories: [DynamicCategory] = []
     @State private var isGeneratingCategories = false
+    
+    // Beautiful loading screen state
+    @State private var loadingPhase: LoadingPhase = .initializing
+    @State private var loadingProgress: Double = 0.0
+    @State private var loadingMessage: String = "Starting up..."
+    @State private var isInitialLoadComplete = false
+    @State private var hasInitiallyLoaded = false
+    @State private var showMainContent = false
+    @State private var showingLocationPicker = false
+    @StateObject private var hapticManager = HapticManager.shared
+    
+    enum LoadingPhase: String, CaseIterable {
+        case initializing = "Initializing"
+        case loadingCache = "Loading your favorites"
+        case fetchingLocation = "Finding your location"
+        case loadingPlaces = "Discovering amazing places"
+        case enhancingRecommendations = "Personalizing your experience"
+        case complete = "Ready to explore!"
+        
+        var icon: String {
+            switch self {
+            case .initializing: return "sparkles"
+            case .loadingCache: return "heart.fill"
+            case .fetchingLocation: return "location.fill"
+            case .loadingPlaces: return "map.fill"
+            case .enhancingRecommendations: return "brain.head.profile"
+            case .complete: return "checkmark.circle.fill"
+            }
+        }
+        
+        var color: Color {
+            switch self {
+            case .initializing: return .blue
+            case .loadingCache: return .pink
+            case .fetchingLocation: return .green
+            case .loadingPlaces: return .orange
+            case .enhancingRecommendations: return .purple
+            case .complete: return .green
+            }
+        }
+    }
     
     // Explicit initializer to accept LocationManager
     init(locationManager: LocationManager) {
@@ -31,92 +76,338 @@ struct ModernMainScreen: View {
     }
     
     var body: some View {
-        ZStack {
-            theme.backgroundGradient
-                .ignoresSafeArea()
-            
-            if locationManager.authorizationStatus == .denied || 
-               locationManager.authorizationStatus == .restricted || 
-               locationManager.authorizationStatus == .notDetermined {
-                locationPermissionView
-            } else if dynamicCategoryManager.isGeneratingCategories {
-                modernCategoryLoadingView
-            } else if dynamicCategoryManager.dynamicCategories.isEmpty {
-                modernEmptyStateView
-            } else {
-                ScrollView {
-                    VStack(spacing: 24) {
-                        // Header Section
-                        headerSection
-                        
-                        // Location & Weather Status
-                        locationStatusSection
-                        
-                        // Search Bar
-                        searchSection
-                        
-                        // Distance Selector
-                        distanceSelector
-                        
-                        // AI Generated Categories
-                        if !aiGeneratedCategories.isEmpty {
-                            aiCategoriesSection
-                        }
-                        
-                        // Traditional Categories
-                        traditionCategoriesSection
-                        
-                        // Infinite Scroll Place Sections
-                        if placeDataService.isLoading {
-                            loadingView
-                        } else if let errorMessage = placeDataService.errorMessage {
-                            errorView(errorMessage)
-                        } else {
+        GeometryReader { geometry in
+            ZStack {
+                // Background
+                theme.backgroundGradient
+                    .ignoresSafeArea()
+                
+                if !isInitialLoadComplete {
+                    // Beautiful Loading Screen
+                    beautifulLoadingScreen
+                } else {
+                    // Main Content
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 24) {
+                            headerSection
+                            locationStatusSection
+                            searchSection
+                            distanceSelector
+                            
+                            if !dynamicCategoryManager.dynamicCategories.isEmpty {
+                                dynamicCategoriesSection
+                            }
+                            
+                            traditionCategoriesSection
                             infiniteScrollPlaceSections
+                            
+                            Spacer(minLength: 120) // Always ensure tab bar space
                         }
                     }
-                    .padding(.bottom, 120)
+                    .refreshable {
+                        await refreshContent()
+                    }
+                    .opacity(showMainContent ? 1.0 : 0.0)
+                    .animation(.easeInOut(duration: 0.5), value: showMainContent)
                 }
-            }
-        }
-        .onChange(of: locationManager.selectedLocation) { oldLocation, newLocation in
-            if let location = newLocation {
-                loadPlacesAndGenerateCategories(for: location)
-            }
-        }
-        .onChange(of: selectedRadius) { oldRadius, newRadius in
-            if let location = locationManager.selectedLocation {
-                loadPlacesAndGenerateCategories(for: location)
-            }
-        }
-        .onChange(of: fingerprintManager.fingerprint) { oldFingerprint, newFingerprint in
-            if newFingerprint != nil, let location = locationManager.selectedLocation {
-                print("🧬 Fingerprint updated, refreshing categories...")
-                Task {
-                    // Force refresh categories with new fingerprint
-                    await DynamicCategoryManager.shared.generateDynamicCategories(location: location)
-                }
-            }
-        }
-        .onAppear {
-            print("👁️ MainScreen appeared")
-            handleInitialSetup()
-        }
-        .task {
-            // Ensure we load data even if location is already available
-            if let location = locationManager.selectedLocation, dynamicCategoryManager.dynamicCategories.isEmpty {
-                print("🚀 Loading places and categories on task startup")
-                loadPlacesAndGenerateCategories(for: location)
             }
         }
         .sheet(isPresented: $showingPlaceDetail) {
             if let place = selectedPlace {
-                ModernPlaceDetailView(place: place)
+                NavigationView {
+                    PlaceDetailView(place: place)
+                }
+            }
+        }
+        .sheet(isPresented: $showingLocationPicker) {
+            LocationSelectorView(locationManager: locationManager, locationSearch: LocationSearchService())
+        }
+        .onAppear {
+            if !hasInitiallyLoaded {
+                hasInitiallyLoaded = true
+                startEnhancedLoadingSequence()
+            }
+        }
+        .onDisappear {
+            // Deactivate heavy services when view disappears to save resources
+            PlaceDataService.shared.deactivate()
+            DynamicCategoryManager.shared.deactivate()
+        }
+        .onChange(of: locationManager.selectedLocation) { _, newLocation in
+            if let location = newLocation, newLocation != nil {
+                // Location changed, reload places
+                Task {
+                    await loadPlacesAndUpdateUI(for: location)
+                }
             }
         }
     }
     
-    // MARK: - Dynamic Categories Section
+    // MARK: - Beautiful Loading Screen
+    private var beautifulLoadingScreen: some View {
+        VStack(spacing: 40) {
+            Spacer()
+            
+            // Animated Logo/Icon
+            ZStack {
+                Circle()
+                    .fill(loadingPhase.color.opacity(0.2))
+                    .frame(width: 120, height: 120)
+                    .scaleEffect(loadingProgress > 0 ? 1.2 : 0.8)
+                    .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: loadingProgress)
+                
+                Image(systemName: loadingPhase.icon)
+                    .font(.system(size: 40, weight: .medium))
+                    .foregroundColor(loadingPhase.color)
+                    .rotationEffect(.degrees(loadingProgress * 360))
+                    .animation(.linear(duration: 2.0).repeatForever(autoreverses: false), value: loadingProgress)
+            }
+            
+            // Progress Section
+            VStack(spacing: 20) {
+                // Phase Title
+                Text(loadingPhase.rawValue)
+                    .font(.inter(24, weight: .bold))
+                    .foregroundColor(.white)
+                    .transition(.opacity.combined(with: .scale))
+                
+                // Loading Message
+                Text(loadingMessage)
+                    .font(.inter(16, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.3), value: loadingMessage)
+                
+                // Progress Bar
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Progress")
+                            .font(.inter(12, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                        
+                        Spacer()
+                        
+                        Text("\(Int(loadingProgress * 100))%")
+                            .font(.inter(12, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    
+                    ProgressView(value: loadingProgress)
+                        .progressViewStyle(LinearProgressViewStyle(tint: loadingPhase.color))
+                        .scaleEffect(y: 2.0)
+                        .animation(.easeInOut(duration: 0.5), value: loadingProgress)
+                }
+                .padding(.horizontal, 40)
+                
+                // Phase Indicators
+                HStack(spacing: 8) {
+                    ForEach(Array(LoadingPhase.allCases.enumerated()), id: \.offset) { index, phase in
+                        Circle()
+                            .fill(index <= LoadingPhase.allCases.firstIndex(of: loadingPhase) ?? 0 ? phase.color : Color.white.opacity(0.3))
+                            .frame(width: 8, height: 8)
+                            .scaleEffect(phase == loadingPhase ? 1.5 : 1.0)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: loadingPhase)
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            // Fun Loading Tips
+            VStack(spacing: 8) {
+                Text("💡 Did you know?")
+                    .font(.inter(14, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.8))
+                
+                Text(getRandomLoadingTip())
+                    .font(.inter(12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.ignoresSafeArea())
+    }
+    
+    // MARK: - Enhanced Loading Sequence
+    private func startEnhancedLoadingSequence() {
+        Task {
+            // Phase 1: Initializing
+            await updateLoadingPhase(.initializing, progress: 0.1, message: "Warming up the engines...")
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+            
+            // Phase 2: Loading Cache
+            await updateLoadingPhase(.loadingCache, progress: 0.2, message: "Loading your saved places...")
+            await loadCacheData()
+            await updateLoadingPhase(.loadingCache, progress: 0.35, message: "Found \(getTotalCachedPlaces()) cached places!")
+            
+            // Phase 3: Location
+            await updateLoadingPhase(.fetchingLocation, progress: 0.45, message: "Getting your location...")
+            await ensureLocation()
+            
+            // Phase 4: Loading Places
+            await updateLoadingPhase(.loadingPlaces, progress: 0.6, message: "Discovering nearby restaurants...")
+            await loadPlacesInBackground()
+            
+            // Phase 5: AI Enhancement
+            await updateLoadingPhase(.enhancingRecommendations, progress: 0.8, message: "Creating your personalized feed...")
+            await generateAIRecommendations()
+            
+            // Phase 6: Complete
+            await updateLoadingPhase(.complete, progress: 1.0, message: "Ready to explore amazing places!")
+            try? await Task.sleep(nanoseconds: 800_000_000) // 0.8 seconds
+            
+            // Show main content
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.8)) {
+                    isInitialLoadComplete = true
+                    showMainContent = true
+                }
+                
+                // Ensure services are active
+                PlaceDataService.shared.activate()
+                DynamicCategoryManager.shared.activate()
+            }
+        }
+    }
+    
+    @MainActor
+    private func updateLoadingPhase(_ phase: LoadingPhase, progress: Double, message: String) async {
+        withAnimation(.easeInOut(duration: 0.5)) {
+            loadingPhase = phase
+            loadingProgress = progress
+            loadingMessage = message
+        }
+        
+        // Add haptic feedback for phase changes
+        if phase != loadingPhase {
+            hapticManager.lightImpact()
+        }
+        
+        try? await Task.sleep(nanoseconds: 200_000_000) // Small delay for animation
+    }
+    
+    private func loadCacheData() async {
+        // Load cached places immediately for instant display
+        if let location = locationManager.selectedLocation {
+            let locationKey = generateLocationKey(for: location, radius: selectedRadius)
+            placeDataService.loadCachedPlacesFirst(for: locationKey)
+        }
+        
+        // Load cached AI categories
+        await DynamicCategoryManager.shared.loadCachedCategories()
+        
+        await MainActor.run {
+            aiGeneratedCategories = DynamicCategoryManager.shared.dynamicCategories
+        }
+    }
+    
+    private func ensureLocation() async {
+        guard locationManager.selectedLocation == nil else { return }
+        
+        await MainActor.run {
+            if locationManager.authorizationStatus == .notDetermined {
+                locationManager.requestLocationPermission()
+            } else if [.authorizedWhenInUse, .authorizedAlways].contains(locationManager.authorizationStatus) {
+                locationManager.getCurrentLocation()
+            }
+        }
+        
+        // Wait for location with timeout
+        var attempts = 0
+        while locationManager.selectedLocation == nil && attempts < 10 {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+            attempts += 1
+        }
+    }
+    
+    private func loadPlacesInBackground() async {
+        guard let location = locationManager.selectedLocation else { return }
+        
+        // Activate services
+        await MainActor.run {
+            PlaceDataService.shared.activate()
+            DynamicCategoryManager.shared.activate()
+        }
+        
+        // Load places with progress updates
+        await loadPlacesAndUpdateUI(for: location, showProgress: true)
+    }
+    
+    private func generateAIRecommendations() async {
+        guard let location = locationManager.selectedLocation else { return }
+        
+        // Generate AI categories if needed
+        if dynamicCategoryManager.dynamicCategories.isEmpty {
+            await DynamicCategoryManager.shared.generateDynamicCategories(location: location)
+            
+            await MainActor.run {
+                aiGeneratedCategories = DynamicCategoryManager.shared.dynamicCategories
+            }
+        }
+        
+        // Fetch weather
+        await MainActor.run {
+            weatherService.fetchWeather(for: location)
+        }
+    }
+    
+    private func loadPlacesAndUpdateUI(for location: CLLocation, showProgress: Bool = false) async {
+        placeDataService.loadPlacesForAllCategories(at: location, radius: selectedRadius, initialLoad: true)
+        
+        if showProgress {
+            // Simulate progress updates for places loading
+            await updateLoadingPhase(.loadingPlaces, progress: 0.65, message: "Finding coffee shops...")
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            
+            await updateLoadingPhase(.loadingPlaces, progress: 0.72, message: "Discovering bars and nightlife...")
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            
+            await updateLoadingPhase(.loadingPlaces, progress: 0.78, message: "Locating entertainment venues...")
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+    }
+    
+    private func refreshContent() async {
+        guard let location = locationManager.selectedLocation else { return }
+        
+        // Clear and reload
+        await MainActor.run {
+            placeDataService.clearAllPlacesData()
+            dynamicCategoryManager.dynamicCategories = []
+            aiGeneratedCategories = []
+        }
+        
+        // Reload everything
+        await loadPlacesAndUpdateUI(for: location)
+        await generateAIRecommendations()
+    }
+    
+    // MARK: - Helper Functions
+    private func getTotalCachedPlaces() -> Int {
+        return placeDataService.placesByCategory.values.reduce(0) { $0 + $1.count }
+    }
+    
+    private func generateLocationKey(for location: CLLocation, radius: Double) -> String {
+        return "\(String(format: "%.4f", location.coordinate.latitude)),\(String(format: "%.4f", location.coordinate.longitude))_\(radius)"
+    }
+    
+    private func getRandomLoadingTip() -> String {
+        let tips = [
+            "Tap ❤️ on places you love to get better recommendations",
+            "Use the search radius to find places exactly how far you want to travel",
+            "Swipe through categories to discover new types of experiences",
+            "Pull down to refresh and get new personalized recommendations",
+            "Your location helps us find the most relevant nearby places"
+        ]
+        return tips.randomElement() ?? tips[0]
+    }
+    
+    // MARK: - Main Content Sections (Existing UI code stays the same)
+    // Keep all existing sections but remove modernEmptyStateView
+    
+    // MARK: - Dynamic Categories Section (Enhanced)
     private var dynamicCategoriesSection: some View {
         VStack(alignment: .leading, spacing: 24) {
             // Section Header
@@ -126,7 +417,7 @@ struct ModernMainScreen: View {
                         .font(.title2.bold())
                         .foregroundColor(.primary)
                     
-                    Text("AI-powered recommendations that update each time you open the app")
+                    Text("AI-powered recommendations updated in real-time")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -135,11 +426,7 @@ struct ModernMainScreen: View {
                 
                 Button(action: {
                     Task {
-                        dynamicCategoryManager.isGeneratingCategories = true
-                        dynamicCategoryManager.dynamicCategories = []
-                        if let location = locationManager.selectedLocation {
-                            loadPlacesAndGenerateCategories(for: location)
-                        }
+                        await refreshAIRecommendations()
                     }
                 }) {
                     Image(systemName: "arrow.clockwise")
@@ -151,174 +438,100 @@ struct ModernMainScreen: View {
             .padding(.horizontal, 20)
             
             // Dynamic Category Rows
-            ForEach(dynamicCategoryManager.dynamicCategories, id: \.id) { category in
-                VStack(alignment: .leading, spacing: 12) {
-                    // Category Header
+            ForEach(aiGeneratedCategories, id: \.id) { category in
+                VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(generateShortCategoryTitle(category))
-                                .font(.headline.bold())
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                            
-                            Text(generatePersonalizedSubtitle(category))
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .lineLimit(2)
-                                .truncationMode(.tail)
-                        }
+                        Text(generateShortCategoryTitle(category))
+                            .font(.system(size: 18, weight: .bold))
+                            .themedText(.primary)
                         
                         Spacer()
+                        
+                        Text("\(category.places.count) places")
+                            .font(.system(size: 14, weight: .medium))
+                            .themedText(.secondary)
                     }
                     .padding(.horizontal, 20)
                     
-                    // Category Horizontal Scroll
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 12) {
-                            // Show existing places
-                            ForEach(category.places) { place in
-                                ModernPlaceCard(
-                                    place: place,
-                                    onTap: {
-                                        selectedPlace = place
-                                        showingPlaceDetail = true
-                                    },
-                                    onFavorite: {
-                                        favoritesManager.toggleFavorite(place)
-                                    },
-                                    isFavorite: favoritesManager.isFavorite(place),
-                                    locationManager: locationManager
-                                )
-                                .frame(width: 280)
-                            }
-                            
-                            // Load more button if there are more places available
-                            if category.places.count >= 10 {
-                                Button(action: {
-                                    Task {
-                                        await loadMorePlacesForCategory(category.id)
-                                    }
-                                }) {
-                                    VStack {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                        Text("Load More")
-                                            .font(.caption)
-                                            .foregroundColor(.white)
-                                    }
-                                    .frame(width: 100, height: 120)
-                                    .background(Color.secondary.opacity(0.3))
-                                    .cornerRadius(12)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                    }
-                }
-            }
-        }
-    }
-    
-    // MARK: - Loading and Empty States
-    private var modernCategoryLoadingView: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Text("🤖 AI is analyzing your preferences...")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            
-            VStack(spacing: 12) {
-                ForEach(0..<3, id: \.self) { _ in
-                    VStack(alignment: .leading, spacing: 8) {
-                        // Category title placeholder
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(.thinMaterial)
-                            .frame(height: 20)
-                            .frame(maxWidth: 250)
-                        
-                        // Places row placeholder
+                    if !category.places.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 16) {
-                                ForEach(0..<3, id: \.self) { _ in
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .fill(.thinMaterial)
-                                        .frame(width: 280, height: 200)
+                                ForEach(category.places, id: \.id) { place in
+                                    ModernPlaceCard(
+                                        place: place,
+                                        onTap: {
+                                            selectedPlace = place
+                                            showingPlaceDetail = true
+                                        },
+                                        onFavorite: {
+                                            favoritesManager.toggleFavorite(place)
+                                        },
+                                        isFavorite: favoritesManager.isFavorite(place),
+                                        locationManager: locationManager
+                                    )
+                                    .frame(width: 280)
+                                }
+                                
+                                // Load more button if available
+                                if category.places.count >= 10 {
+                                    Button(action: {
+                                        Task {
+                                            await loadMorePlacesForCategory(category.id)
+                                        }
+                                    }) {
+                                        VStack {
+                                            ProgressView()
+                                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            Text("Load More")
+                                                .font(.caption)
+                                                .foregroundColor(.white)
+                                        }
+                                        .frame(width: 100, height: 120)
+                                        .background(Color.secondary.opacity(0.3))
+                                        .cornerRadius(12)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
                                 }
                             }
                             .padding(.horizontal, 20)
                         }
                     }
-                    .padding(.vertical, 8)
-                }
-            }
-        }
-        .redacted(reason: .placeholder)
-        .onAppear {
-            // Auto-generate categories if location is available
-            if let location = locationManager.selectedLocation {
-                Task {
-                    generateAICategories()
                 }
             }
         }
     }
     
-    private var modernEmptyStateView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "sparkles.rectangle.stack")
-                .font(.system(size: 60, weight: .light))
-                .foregroundColor(.secondary)
-            
-            VStack(spacing: 8) {
-                Text("Ready to discover amazing places?")
-                    .font(.title2.bold())
-                    .foregroundColor(.primary)
-                
-                Text("Our AI will create personalized recommendations based on your preferences")
-                    .font(.body)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            
-            Button(action: {
-                Task {
-                    // Clear existing categories first to show loading state
-                    dynamicCategoryManager.isGeneratingCategories = true
-                    dynamicCategoryManager.dynamicCategories = []
-                    
-                    if let location = locationManager.selectedLocation {
-                        loadPlacesAndGenerateCategories(for: location)
-                    }
-                }
-            }) {
-                HStack(spacing: 8) {
-                    if dynamicCategoryManager.isGeneratingCategories {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: "sparkles")
-                    }
-                    Text(dynamicCategoryManager.isGeneratingCategories ? "Generating..." : "Generate My Recommendations")
-                }
-                .font(.headline)
-                .foregroundColor(.white)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 12)
-                .background(.blue)
-                .cornerRadius(12)
-                .opacity(dynamicCategoryManager.isGeneratingCategories ? 0.8 : 1.0)
-            }
-            .buttonStyle(.plain)
-            .disabled(dynamicCategoryManager.isGeneratingCategories)
+    private func refreshAIRecommendations() async {
+        guard let location = locationManager.selectedLocation else { return }
+        
+        await MainActor.run {
+            isGeneratingCategories = true
         }
-        .padding(40)
+        
+        // Regenerate AI categories
+        await DynamicCategoryManager.shared.generateDynamicCategories(location: location)
+        
+        await MainActor.run {
+            aiGeneratedCategories = DynamicCategoryManager.shared.dynamicCategories
+            isGeneratingCategories = false
+        }
+    }
+    
+    private func loadMorePlacesForCategory(_ categoryId: String) async {
+        // Implementation for loading more places in a specific AI category
+        // This would extend the current category with more places
+        guard let location = locationManager.selectedLocation else { return }
+        
+        // Find the category and load more places for it
+        if let categoryIndex = aiGeneratedCategories.firstIndex(where: { $0.id == categoryId }) {
+            let category = aiGeneratedCategories[categoryIndex]
+            
+            // Load more places for this specific category using PlaceDataService
+            placeDataService.loadMorePlaces(for: category.category, location: location, radius: selectedRadius)
+            
+            // The UI will automatically update when placeDataService.placesByCategory changes
+            print("✅ Loading more places for category: \(category.title)")
+        }
     }
     
     // MARK: - UI Sections
@@ -470,40 +683,6 @@ struct ModernMainScreen: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedRadius)
     }
     
-    private var aiCategoriesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(theme.travelYellow)
-                    
-                    Text("AI Curated for You")
-                        .font(.system(size: 20, weight: .bold))
-                        .themedText(.primary)
-                }
-                
-                Spacer()
-                
-                if isGeneratingCategories {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                        .tint(theme.travelYellow)
-                }
-            }
-            .padding(.horizontal, 20)
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    ForEach(aiGeneratedCategories, id: \.id) { category in
-                        AICategoryCard(category: category.category)
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
-        }
-    }
-    
     private var traditionCategoriesSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -543,34 +722,29 @@ struct ModernMainScreen: View {
                     }
                     .padding(.horizontal, 20)
                     
-                                            ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 16) {
-                                ForEach(placeDataService.placesByCategory[category] ?? [], id: \.id) { place in
-                                    ModernPlaceCard(
-                                        place: place,
-                                        onTap: {
-                                            selectedPlace = place
-                                            showingPlaceDetail = true
-                                        },
-                                        onFavorite: {
-                                            favoritesManager.toggleFavorite(place)
-                                        },
-                                        isFavorite: favoritesManager.isFavorite(place),
-                                        locationManager: locationManager
-                                    )
-                                    .frame(width: 280)
-                                }
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 16) {
+                            ForEach(placeDataService.placesByCategory[category] ?? [], id: \.id) { place in
+                                ModernPlaceCard(
+                                    place: place,
+                                    onTap: {
+                                        selectedPlace = place
+                                        showingPlaceDetail = true
+                                    },
+                                    onFavorite: {
+                                        favoritesManager.toggleFavorite(place)
+                                    },
+                                    isFavorite: favoritesManager.isFavorite(place),
+                                    locationManager: locationManager
+                                )
+                                .frame(width: 280)
                             }
-                            .padding(.horizontal, 20)
                         }
+                        .padding(.horizontal, 20)
+                    }
                 }
             }
         }
-    }
-    
-    private func loadMorePlaces(for category: PlaceCategory) {
-        guard let location = locationManager.selectedLocation else { return }
-        placeDataService.loadMorePlaces(for: category, location: location, radius: selectedRadius)
     }
     
     // MARK: - Helper Properties
@@ -829,20 +1003,31 @@ struct ModernMainScreen: View {
         }
     }
     
-    private func loadMorePlacesForCategory(_ categoryId: String) async {
-        guard let currentLocation = locationManager.currentLocation else { return }
-        
-        let newPlaces = await dynamicCategoryManager.fetchMorePlacesForCategory(
-            categoryId, 
-            location: currentLocation
-        )
-        
-        // Update the category with new places
-        if let categoryIndex = dynamicCategoryManager.dynamicCategories.firstIndex(where: { $0.id == categoryId }) {
-            await MainActor.run {
-                dynamicCategoryManager.dynamicCategories[categoryIndex].places.append(contentsOf: newPlaces)
+    // MARK: - Skeleton Placeholder
+    private var skeletonView: some View {
+        VStack(spacing: 24) {
+            ForEach(0..<5, id: \..self) { idx in
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .frame(height: idx == 0 ? 40 : 180) // first placeholder like header, others like cards
+                    .redacted(reason: .placeholder)
+                    .shimmer()
+                    .padding(.horizontal, 20)
             }
+            Spacer()
         }
+        .padding(.top, 120)
+        .allowsHitTesting(false)
+    }
+    
+    private func setupCacheObservation() {
+        // hide skeleton when data arrives
+        placeDataService.$placesByCategory
+            .receive(on: DispatchQueue.main)
+            .sink { dict in
+                if !dict.isEmpty { showSkeleton = false }
+            }
+            .store(in: &cancellables)
     }
 }
 

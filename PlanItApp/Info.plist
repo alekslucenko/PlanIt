@@ -2,37 +2,39 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleExecutable</key>
-    <string>$(EXECUTABLE_NAME)</string>
-    <key>CFBundleIdentifier</key>
-    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>$(PRODUCT_NAME)</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>UILaunchScreen</key>
-    <dict/>
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsArbitraryLoads</key>
-        <true/>
-    </dict>
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>PlanIt needs your location to recommend great nearby places.</string>
-    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>PlanIt needs your location to recommend great nearby places.</string>
-    <key>NSLocationTemporaryUsageDescriptionDictionary</key>
-    <dict>
-        <key>PreciseLocation</key>
-        <string>PlanIt uses precise location to show the best places closest to you.</string>
-    </dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>PlanIt needs your location to recommend great nearby places.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>PlanIt needs your location to recommend great nearby places.</string>
+	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
+	<dict>
+		<key>PreciseLocation</key>
+		<string>PlanIt uses precise location to show the best places closest to you.</string>
+	</dict>
+	<key>GEMINI_API_KEY</key>
+	<string>AIzaSyBHEFxePy12kmEl2TjwDNe-K7FOnqDq8SI</string>
 </dict>
-</plist> 
+</plist>

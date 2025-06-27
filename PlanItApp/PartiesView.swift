@@ -6,7 +6,7 @@ import FirebaseAuth
 /// Modern UI for discovering and RSVPing to nearby parties
 /// Includes search, filtering, detailed party information, and real-time updates
 struct PartiesView: View, Equatable {
-    @StateObject private var partyManager = PartyManager.shared
+    @EnvironmentObject var partyManager: PartyManager
     @StateObject private var locationManager = LocationManager.shared
     @StateObject private var themeManager = ThemeManager.shared
     @StateObject private var performanceService = PerformanceOptimizationService.shared
@@ -16,7 +16,7 @@ struct PartiesView: View, Equatable {
     @State private var selectedParty: Party?
     @State private var showingRSVPSheet = false
     @State private var isRefreshing = false
-    @State private var viewId = UUID()
+    @State private var hasAppeared = false
     
     enum PartyFilter: String, CaseIterable {
         case all = "All Parties"
@@ -108,20 +108,21 @@ struct PartiesView: View, Equatable {
             }
         }
         .onAppear {
-            performanceService.optimizeForKeyboardInput()
-            
-            Task {
-                await refreshParties()
+            // Only perform initial setup once
+            if !hasAppeared {
+                hasAppeared = true
+                performanceService.optimizeForKeyboardInput()
+                
+                Task {
+                    await initialLoadParties()
+                }
+                
+                print("🎉 PartiesView appeared - initial load")
             }
-            
-            // Force view refresh when appearing
-            viewId = UUID()
-            print("🎉 PartiesView appeared and refreshed")
         }
         .onDisappear {
             performanceService.restoreNormalInputMode()
         }
-        .id(viewId)
         .performanceOptimized(identifier: "PartiesView")
     }
     
@@ -240,7 +241,26 @@ struct PartiesView: View, Equatable {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
+    // MARK: - Data Loading Functions
+    
+    private func initialLoadParties() async {
+        do {
+            try await performanceService.performBackgroundTask {
+                await partyManager.checkHostMode()
+                
+                // Ensure party listeners are active
+                partyManager.setupListeners()
+            }
+        } catch {
+            print("⚠️ Error during initial load: \(error)")
+        }
+        
+        print("✅ Initial parties load completed")
+    }
+    
     private func refreshParties() async {
+        guard !isRefreshing else { return } // Prevent multiple concurrent refreshes
+        
         isRefreshing = true
         
         print("🎉 Starting parties refresh...")
@@ -248,27 +268,21 @@ struct PartiesView: View, Equatable {
         // Use performance-optimized operations
         do {
             try await performanceService.performBackgroundTask {
-                await partyManager.checkHostMode()
-                
-                // Load parties and create samples if needed
-                await partyManager.loadPartiesAndCreateSamples()
-                
-                // Force PartyManager to refresh its listeners and data
+                // Refresh party listeners to get latest data
                 await MainActor.run {
                     partyManager.removeListeners()
                     partyManager.setupListeners()
                 }
+                
+                // Add a small delay to let listeners fetch fresh data
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
             }
         } catch {
             print("⚠️ Error refreshing parties: \(error)")
         }
         
-        // Add a small delay for smooth animation and data loading
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds for data to load
-        
         await MainActor.run {
             isRefreshing = false
-            viewId = UUID() // Force view refresh
             print("✅ Parties refreshed successfully - Found \(partyManager.nearbyParties.count) parties")
         }
     }

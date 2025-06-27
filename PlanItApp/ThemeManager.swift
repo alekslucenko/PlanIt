@@ -2,77 +2,74 @@ import SwiftUI
 import Combine
 import Foundation
 
-// MARK: - Professional Travel App Theme Manager
-// Color hex extension is now in AppModels.swift to avoid duplication
-
-// MARK: - Professional Travel App Theme Manager
+// MARK: - Professional Business Theme Manager
 class ThemeManager: ObservableObject {
     static let shared = ThemeManager()
     
-    @Published var isDarkMode = true // Default to dark mode for professional look
+    @Published var isDarkMode = true // Default to dark mode for business professional look
     @Published var primaryColor = Color.blue
     @Published var accentColor = Color.green
     
-    // MARK: - Professional Travel App Color Palette
-    // Primary brand colors - inspired by Airbnb, Booking.com, Instagram
+    // MARK: - Professional Business Color Palette
+    // Primary brand colors - Business professional dark theme
     var brandPrimary: Color {
-        Color(hex: "#FF5A5F") // Travel red-coral
+        Color(hex: "#1EF0A0") // Bright business green
     }
     
     var brandSecondary: Color {
-        Color(hex: "#00A699") // Travel teal
+        Color(hex: "#10B981") // Darker business green
     }
     
     var brandAccent: Color {
-        Color(hex: "#FC642D") // Travel orange
+        Color(hex: "#FFD700") // Gold accent for highlights
     }
     
-    // Dark theme colors (primary interface) - IMPROVED CONTRAST
+    // Dark theme colors (primary interface) - BUSINESS PROFESSIONAL
     var primaryBackground: Color {
-        isDarkMode ? Color(hex: "#000000") : Color(hex: "#FFFFFF") // Pure black/white for better contrast
+        isDarkMode ? Color(hex: "#0F0F0F") : Color(hex: "#FFFFFF") // Almost black for professional look
     }
     
     var secondaryBackground: Color {
-        isDarkMode ? Color(hex: "#1A1A1A") : Color(hex: "#F8F9FA") // Better contrast
+        isDarkMode ? Color(hex: "#1C1C1E") : Color(hex: "#F2F2F7") // Dark gray
     }
     
     var tertiaryBackground: Color {
-        isDarkMode ? Color(hex: "#2D2D2D") : Color(hex: "#FFFFFF") // Improved contrast
+        isDarkMode ? Color(hex: "#2C2C2E") : Color(hex: "#FFFFFF") // Medium gray
     }
     
     var cardBackground: Color {
-        isDarkMode ? Color(hex: "#1A1A1A") : Color.white
+        isDarkMode ? Color(hex: "#1C1C1E") : Color.white
     }
     
-    // ENHANCED TOOLBAR BACKGROUND - MAJOR FIX
+    // ENHANCED TOOLBAR BACKGROUND - BUSINESS STYLE
     var toolbarBackground: Color {
-        isDarkMode ? Color(hex: "#0D0D0D") : Color(hex: "#FFFFFF")
+        isDarkMode ? Color(hex: "#000000") : Color(hex: "#FFFFFF")
     }
     
     var tabBarBackground: Color {
-        isDarkMode ? Color(hex: "#0D0D0D").opacity(0.95) : Color(hex: "#FFFFFF").opacity(0.95)
+        isDarkMode ? Color(hex: "#000000").opacity(0.98) : Color(hex: "#FFFFFF").opacity(0.98)
     }
     
-    // IMPROVED TEXT COLORS FOR BETTER CONTRAST
+    // HIGH CONTRAST TEXT COLORS FOR BUSINESS
     var primaryText: Color {
         isDarkMode ? Color(hex: "#FFFFFF") : Color(hex: "#000000")
     }
     
     var secondaryText: Color {
-        isDarkMode ? Color(hex: "#B0B0B0") : Color(hex: "#666666") // Better contrast
+        isDarkMode ? Color(hex: "#D1D1D6") : Color(hex: "#3C3C43") // Much better contrast
     }
     
     var tertiaryText: Color {
-        isDarkMode ? Color(hex: "#808080") : Color(hex: "#999999") // Improved readability
+        isDarkMode ? Color(hex: "#8E8E93") : Color(hex: "#8E8E93") // Subtle but readable
     }
     
-    // TAB BAR TEXT COLORS - MAJOR FIX
+    // TAB BAR TEXT COLORS - HIGH CONTRAST
     var tabBarActiveText: Color {
-        isDarkMode ? Color(hex: "#FFFFFF") : Color(hex: "#000000")
+        isDarkMode ? brandAccent : Color(hex: "#000000")
     }
     
     var tabBarInactiveText: Color {
-        isDarkMode ? Color(hex: "#808080") : Color(hex: "#666666")
+        isDarkMode ? Color(hex: "#8E8E93") : Color(hex: "#8E8E93")
     }
     
     // Professional accent colors for categories
@@ -114,30 +111,30 @@ class ThemeManager: ObservableObject {
     var accentPink: Color { travelPink }
     var accentPurple: Color { travelPurple }
     var accentOrange: Color { travelOrange }
-    var accentGold: Color { travelYellow }
+    var accentGold: Color { brandAccent } // Gold neon highlight
     var neonBlue: Color { travelBlue }
-    var neonGreen: Color { travelGreen }
+    var neonGreen: Color { brandPrimary }
     var neonPink: Color { travelPink }
     var neonPurple: Color { travelPurple }
-    var neonYellow: Color { travelYellow }
+    var neonYellow: Color { brandAccent }
     
     var colorScheme: ColorScheme {
         isDarkMode ? .dark : .light
     }
     
     // MARK: - Mood-based theming (now professional)
-    @Published var currentMoodColor: Color = Color(hex: "#007AFF")
+    @Published var currentMoodColor: Color = Color(hex: "#1EF0A0")
     @Published var currentWeatherMood: String? = nil
     
     func updateMoodBasedOnTime() {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
         case 6..<12:
-            currentMoodColor = travelOrange // Morning energy
+            currentMoodColor = brandPrimary // Morning energy
         case 12..<17:
             currentMoodColor = travelBlue // Afternoon focus
         case 17..<21:
-            currentMoodColor = travelPurple // Evening relaxation
+            currentMoodColor = brandAccent // Evening relaxation
         default:
             currentMoodColor = travelIndigo // Night calm
         }
@@ -150,79 +147,74 @@ class ThemeManager: ObservableObject {
         isDarkMode ? .zenNight : .zenLight
     }
     
-    // MARK: - Business Theme Colors (Green/Black/White Money Vibe)
+    // MARK: - Business Theme Colors (Professional Dark/Light)
     var businessPrimary: Color {
-        isDarkMode ? Color(red: 0.12, green: 0.94, blue: 0.57) : Color(red: 0.06, green: 0.67, blue: 0.39) // Bright/Dark Green
+        isDarkMode ? brandPrimary : brandSecondary // Bright green in dark, darker in light
     }
     
     var businessSecondary: Color {
-        isDarkMode ? Color(red: 0.09, green: 0.09, blue: 0.09) : Color(red: 0.05, green: 0.05, blue: 0.05) // Near Black
+        isDarkMode ? Color(hex: "#1C1C1E") : Color(hex: "#F2F2F7") // Dark gray backgrounds
     }
     
     var businessAccent: Color {
-        isDarkMode ? Color(red: 0.98, green: 0.98, blue: 0.98) : Color.white // Pure White
+        isDarkMode ? brandAccent : Color(hex: "#B8860B") // Gold accents
     }
     
     var businessBackground: Color {
-        isDarkMode ? Color(red: 0.08, green: 0.08, blue: 0.08) : Color(red: 0.98, green: 0.98, blue: 0.98) // Dark/Light Background
+        isDarkMode ? Color(hex: "#0F0F0F") : Color(hex: "#FFFFFF") // Deep black / pure white
     }
     
     var businessCardBackground: Color {
-        isDarkMode ? Color(red: 0.12, green: 0.12, blue: 0.12) : Color.white
+        isDarkMode ? Color(hex: "#1C1C1E") : Color(hex: "#FFFFFF")
     }
     
     var businessText: Color {
-        isDarkMode ? Color(red: 0.95, green: 0.95, blue: 0.95) : Color(red: 0.1, green: 0.1, blue: 0.1)
+        isDarkMode ? Color(hex: "#FFFFFF") : Color(hex: "#000000")
     }
     
     var businessSecondaryText: Color {
-        isDarkMode ? Color(red: 0.7, green: 0.7, blue: 0.7) : Color(red: 0.5, green: 0.5, blue: 0.5)
+        isDarkMode ? Color(hex: "#D1D1D6") : Color(hex: "#3C3C43")
     }
     
     var businessSuccess: Color {
-        Color(red: 0.16, green: 0.8, blue: 0.33) // Success Green
+        Color(hex: "#34C759") // Success Green
     }
     
     var businessDanger: Color {
-        Color(red: 0.9, green: 0.27, blue: 0.27) // Error Red
+        Color(hex: "#FF3B30") // Error Red
     }
     
     var businessWarning: Color {
-        Color(red: 1.0, green: 0.73, blue: 0.0) // Warning Orange
+        Color(hex: "#FF9500") // Warning Orange
     }
     
     var businessInfo: Color {
-        Color(red: 0.2, green: 0.6, blue: 1.0) // Info Blue
+        Color(hex: "#007AFF") // Info Blue
     }
     
     var businessBorder: Color {
-        isDarkMode ? Color(red: 0.2, green: 0.2, blue: 0.2) : Color(red: 0.9, green: 0.9, blue: 0.9)
+        isDarkMode ? Color(hex: "#38383A") : Color(hex: "#C6C6C8")
     }
     
     var businessShadow: Color {
-        isDarkMode ? Color.black.opacity(0.5) : Color.black.opacity(0.1)
+        isDarkMode ? Color.black.opacity(0.6) : Color.black.opacity(0.15)
     }
     
     private init() {
-        // Default to dark mode for professional travel app look
-        if UserDefaults.standard.object(forKey: "isDarkMode") == nil {
-            self.isDarkMode = true
-            UserDefaults.standard.set(true, forKey: "isDarkMode")
-            print("🎨 First time launch - setting professional dark mode")
-        } else {
-            self.isDarkMode = UserDefaults.standard.bool(forKey: "isDarkMode")
-        }
-        print("🎨 ThemeManager initialized - Professional Mode: \(isDarkMode ? "Dark" : "Light")")
+        // Force dark mode for business professional look
+        self.isDarkMode = true
+        UserDefaults.standard.set(true, forKey: "isDarkMode")
+        print("🎨 ThemeManager initialized - Business Dark Mode: \(isDarkMode)")
     }
     
-    // MARK: - IMPROVED Professional Gradients
+    // MARK: - Professional Dark Gradients
     var backgroundGradient: LinearGradient {
         if isDarkMode {
             return LinearGradient(
                 colors: [
-                    Color(hex: "#000000"),
-                    Color(hex: "#1A1A1A"),
-                    Color(hex: "#000000")
+                    Color(hex: "#0F0F0F"),
+                    Color(hex: "#1C1C1E"),
+                    Color(hex: "#0F0F0F")
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -231,7 +223,7 @@ class ThemeManager: ObservableObject {
             return LinearGradient(
                 colors: [
                     Color(hex: "#FFFFFF"),
-                    Color(hex: "#F8F9FA"),
+                    Color(hex: "#F2F2F7"),
                     Color(hex: "#FFFFFF")
                 ],
                 startPoint: .topLeading,
@@ -244,8 +236,8 @@ class ThemeManager: ObservableObject {
         if isDarkMode {
             return LinearGradient(
                 colors: [
-                    Color(hex: "#1A1A1A"),
-                    Color(hex: "#2D2D2D").opacity(0.8)
+                    Color(hex: "#1C1C1E"),
+                    Color(hex: "#2C2C2E").opacity(0.8)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -254,7 +246,7 @@ class ThemeManager: ObservableObject {
             return LinearGradient(
                 colors: [
                     Color.white,
-                    Color(hex: "#F8F9FA").opacity(0.5)
+                    Color(hex: "#F2F2F7").opacity(0.5)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -262,13 +254,13 @@ class ThemeManager: ObservableObject {
         }
     }
     
-    // ENHANCED TOOLBAR GRADIENT - MAJOR FIX
+    // PROFESSIONAL TAB BAR GRADIENT
     var professionalTabBarGradient: LinearGradient {
         if isDarkMode {
             return LinearGradient(
                 colors: [
-                    Color(hex: "#0D0D0D").opacity(0.98),
-                    Color(hex: "#1A1A1A").opacity(0.95)
+                    Color(hex: "#000000").opacity(0.98),
+                    Color(hex: "#1C1C1E").opacity(0.95)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -277,7 +269,7 @@ class ThemeManager: ObservableObject {
             return LinearGradient(
                 colors: [
                     Color.white.opacity(0.98),
-                    Color(hex: "#F8F9FA").opacity(0.95)
+                    Color(hex: "#F2F2F7").opacity(0.95)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -350,14 +342,14 @@ struct ThemedCard: ViewModifier {
                     .fill(theme.cardBackground)
                     .overlay(
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(theme.isDarkMode ? Color.white.opacity(0.1) : Color.black.opacity(0.05), lineWidth: 1)
+                            .stroke(theme.businessBorder, lineWidth: 1)
                     )
             )
             .shadow(
-                color: theme.isDarkMode ? Color.black.opacity(0.3) : Color.black.opacity(0.1),
-                radius: theme.isDarkMode ? 8 : 4,
+                color: theme.businessShadow,
+                radius: theme.isDarkMode ? 12 : 8,
                 x: 0,
-                y: theme.isDarkMode ? 4 : 2
+                y: theme.isDarkMode ? 6 : 4
             )
     }
 }
@@ -380,7 +372,7 @@ struct ThemedText: ViewModifier {
         case .tertiary:
             color = theme.tertiaryText
         case .accent:
-            color = theme.travelBlue
+            color = theme.businessPrimary
         }
         
         return content

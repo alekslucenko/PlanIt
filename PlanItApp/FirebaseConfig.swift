@@ -12,6 +12,12 @@ class FirebaseConfig {
         
         FirebaseApp.configure()
         
+        // Configure Firestore settings for better offline support
+        let settings = FirestoreSettings()
+        settings.isPersistenceEnabled = true
+        settings.cacheSizeBytes = FirestoreCacheSizeUnlimited
+        Firestore.firestore().settings = settings
+        
         // Configure Google Sign-In
         guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
               let plist = NSDictionary(contentsOfFile: path),
@@ -23,6 +29,6 @@ class FirebaseConfig {
         let gidConfig = GIDConfiguration(clientID: clientId)
         GIDSignIn.sharedInstance.configuration = gidConfig
         
-        print("🔥 Firebase configured successfully with Google Sign-In")
+        print("🔥 Firebase configured successfully with Google Sign-In and enhanced offline support")
     }
 } 

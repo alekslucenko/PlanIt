@@ -27,6 +27,7 @@ final class PerformanceOptimizationService: ObservableObject {
     private var isOptimizing = false
     private var isReduceMotionEnabled = false
     private var performanceMode: PerformanceMode = .balanced
+    private var lastOptimization: Date = .distantPast
     
     enum PerformanceMode {
         case performance  // Maximum performance, minimal animations
@@ -257,7 +258,9 @@ final class PerformanceOptimizationService: ObservableObject {
         
         // Auto-optimize if performance degrades
         if currentFPS < 30 || memoryUsage > 200 {
-            if !isOptimizing {
+            let now = Date()
+            if !isOptimizing && now.timeIntervalSince(lastOptimization) > 60 {
+                lastOptimization = now
                 autoOptimize()
             }
         }

@@ -335,6 +335,14 @@ class OnboardingManager: ObservableObject {
         userDefaults.synchronize()
     }
     
+    // FIXED: Add method to manually set onboarding completion status
+    func setHasCompletedOnboarding(_ completed: Bool) {
+        hasCompletedOnboarding = completed
+        userDefaults.set(completed, forKey: completedKey)
+        userDefaults.synchronize()
+        print("🔄 OnboardingManager: hasCompletedOnboarding manually set to \(completed)")
+    }
+    
     func resetOnboarding() {
         hasCompletedOnboarding = false
         onboardingData = nil
@@ -426,32 +434,54 @@ struct OnboardingResponse: Codable {
         ratingValue = try container.decodeIfPresent(Int.self, forKey: .ratingValue)
         textValue = try container.decodeIfPresent(String.self, forKey: .textValue)
         
-        // Handle timestamp with multiple fallback strategies
+        // Enhanced timestamp handling with multiple fallback strategies
         if let timestampDate = try? container.decode(Date.self, forKey: .timestamp) {
             timestamp = timestampDate
         } else if let timestampString = try? container.decode(String.self, forKey: .timestamp) {
-            // Try ISO8601 format first
+            // Handle various string formats
             let iso8601Formatter = ISO8601DateFormatter()
+            iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            
             if let date = iso8601Formatter.date(from: timestampString) {
                 timestamp = date
             } else {
-                // Try standard date formatter
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
-                if let date = dateFormatter.date(from: timestampString) {
+                // Try without fractional seconds
+                iso8601Formatter.formatOptions = [.withInternetDateTime]
+                if let date = iso8601Formatter.date(from: timestampString) {
                     timestamp = date
                 } else {
-                    // Fallback to current date
-                    print("⚠️ Could not parse timestamp: \(timestampString), using current date")
-                    timestamp = Date()
+                    // Try standard date formatter
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+                    if let date = dateFormatter.date(from: timestampString) {
+                        timestamp = date
+                    } else {
+                        // Try simple format
+                        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
+                        if let date = dateFormatter.date(from: timestampString) {
+                            timestamp = date
+                        } else {
+                            print("⚠️ Could not parse timestamp string: \(timestampString), using current date")
+                            timestamp = Date()
+                        }
+                    }
                 }
             }
         } else if let timestampDouble = try? container.decode(Double.self, forKey: .timestamp) {
-            // Handle Unix timestamp
-            timestamp = Date(timeIntervalSince1970: timestampDouble)
+            // Handle Unix timestamp (seconds or milliseconds)
+            if timestampDouble > 1000000000000 {
+                // Milliseconds
+                timestamp = Date(timeIntervalSince1970: timestampDouble / 1000)
+            } else {
+                // Seconds
+                timestamp = Date(timeIntervalSince1970: timestampDouble)
+            }
+        } else if let timestampInt = try? container.decode(Int.self, forKey: .timestamp) {
+            // Handle Unix timestamp as integer
+            timestamp = Date(timeIntervalSince1970: TimeInterval(timestampInt))
         } else {
             // Ultimate fallback
-            print("⚠️ No valid timestamp found, using current date")
+            print("⚠️ No valid timestamp found in any supported format, using current date")
             timestamp = Date()
         }
     }
@@ -2331,6 +2361,13 @@ struct Party: Identifiable, Codable, Equatable {
     let updatedAt: Date
     let analytics: PartyAnalytics?
     
+    // Analytics support properties
+    let viewCount: Int?
+    let clickCount: Int?
+    let capacity: Int?
+    var capacityValue: Int { capacity ?? guestCap }
+    let attendees: [PartyAttendee]
+    
     enum PartyStatus: String, Codable, CaseIterable {
         case upcoming = "upcoming"
         case live = "live"
@@ -2358,7 +2395,11 @@ struct Party: Identifiable, Codable, Equatable {
         status: PartyStatus = .upcoming,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
-        analytics: PartyAnalytics? = nil
+        analytics: PartyAnalytics? = nil,
+        viewCount: Int? = nil,
+        clickCount: Int? = nil,
+        capacity: Int? = nil,
+        attendees: [PartyAttendee] = []
     ) {
         self.id = id
         self.title = title
@@ -2380,6 +2421,10 @@ struct Party: Identifiable, Codable, Equatable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.analytics = analytics
+        self.viewCount = viewCount
+        self.clickCount = clickCount
+        self.capacity = capacity
+        self.attendees = attendees
     }
 }
 
@@ -2411,6 +2456,11 @@ struct TicketTier: Identifiable, Codable, Equatable {
     let perks: [String]
     let isAvailable: Bool
     
+    // MARK: - Custom Coding Keys to handle missing fields
+    enum CodingKeys: String, CodingKey {
+        case id, name, price, description, maxQuantity, currentSold, soldCount, perks, isAvailable
+    }
+    
     init(
         id: String = UUID().uuidString,
         name: String,
@@ -2431,6 +2481,39 @@ struct TicketTier: Identifiable, Codable, Equatable {
         self.soldCount = soldCount
         self.perks = perks
         self.isAvailable = isAvailable
+    }
+    
+    // MARK: - Custom Decoder to handle missing soldCount gracefully
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        price = try container.decode(Double.self, forKey: .price)
+        description = try container.decode(String.self, forKey: .description)
+        maxQuantity = try container.decode(Int.self, forKey: .maxQuantity)
+        currentSold = try container.decodeIfPresent(Int.self, forKey: .currentSold) ?? 0
+        
+        // Handle missing soldCount field gracefully
+        soldCount = try container.decodeIfPresent(Int.self, forKey: .soldCount) ?? currentSold
+        
+        perks = try container.decodeIfPresent([String].self, forKey: .perks) ?? []
+        isAvailable = try container.decodeIfPresent(Bool.self, forKey: .isAvailable) ?? true
+    }
+    
+    // MARK: - Custom Encoder to ensure consistency
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(price, forKey: .price)
+        try container.encode(description, forKey: .description)
+        try container.encode(maxQuantity, forKey: .maxQuantity)
+        try container.encode(currentSold, forKey: .currentSold)
+        try container.encode(soldCount, forKey: .soldCount)
+        try container.encode(perks, forKey: .perks)
+        try container.encode(isAvailable, forKey: .isAvailable)
     }
 }
 
@@ -2480,6 +2563,23 @@ struct RSVP: Identifiable, Codable, Equatable {
         self.rsvpDate = rsvpDate
         self.checkInDate = checkInDate
         self.userData = userData
+    }
+}
+
+/// Party attendee model for analytics
+struct PartyAttendee: Identifiable, Codable, Equatable {
+    let id: String
+    let userId: String
+    let userName: String
+    let joinedAt: Date
+    let ticketTierId: String?
+    
+    init(id: String = UUID().uuidString, userId: String, userName: String, joinedAt: Date = Date(), ticketTierId: String? = nil) {
+        self.id = id
+        self.userId = userId
+        self.userName = userName
+        self.joinedAt = joinedAt
+        self.ticketTierId = ticketTierId
     }
 }
 
@@ -2730,4 +2830,69 @@ struct HostStats: Identifiable, Codable {
 }
 
 /// Party host profile for business users
+/// Custom Codable conformance to prevent crashes when optional Firestore fields are missing
+extension Party {
+    enum PartyCodingKeys: String, CodingKey {
+        case id, title, description, hostId, hostName, location, startDate, endDate, ticketTiers,
+             guestCap, currentAttendees, isPublic, tags, flyerImageURL, landingPageURL, perks,
+             status, createdAt, updatedAt, analytics, viewCount, clickCount, capacity, attendees
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: PartyCodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.description = try container.decode(String.self, forKey: .description)
+        self.hostId = try container.decode(String.self, forKey: .hostId)
+        self.hostName = try container.decode(String.self, forKey: .hostName)
+        self.location = try container.decode(PartyLocation.self, forKey: .location)
+        self.startDate = try container.decode(Date.self, forKey: .startDate)
+        self.endDate = try container.decode(Date.self, forKey: .endDate)
+        self.ticketTiers = try container.decodeIfPresent([TicketTier].self, forKey: .ticketTiers) ?? []
+        self.guestCap = try container.decodeIfPresent(Int.self, forKey: .guestCap) ?? 0
+        self.currentAttendees = try container.decodeIfPresent(Int.self, forKey: .currentAttendees) ?? 0
+        self.isPublic = try container.decodeIfPresent(Bool.self, forKey: .isPublic) ?? true
+        self.tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        self.flyerImageURL = try container.decodeIfPresent(String.self, forKey: .flyerImageURL)
+        self.landingPageURL = try container.decodeIfPresent(String.self, forKey: .landingPageURL)
+        self.perks = try container.decodeIfPresent([String].self, forKey: .perks) ?? []
+        self.status = try container.decodeIfPresent(PartyStatus.self, forKey: .status) ?? .upcoming
+        self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        self.analytics = try container.decodeIfPresent(PartyAnalytics.self, forKey: .analytics)
+        self.viewCount = try container.decodeIfPresent(Int.self, forKey: .viewCount)
+        self.clickCount = try container.decodeIfPresent(Int.self, forKey: .clickCount)
+        self.capacity = try container.decodeIfPresent(Int.self, forKey: .capacity)
+        self.attendees = try container.decodeIfPresent([PartyAttendee].self, forKey: .attendees) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: PartyCodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(description, forKey: .description)
+        try container.encode(hostId, forKey: .hostId)
+        try container.encode(hostName, forKey: .hostName)
+        try container.encode(location, forKey: .location)
+        try container.encode(startDate, forKey: .startDate)
+        try container.encode(endDate, forKey: .endDate)
+        try container.encode(ticketTiers, forKey: .ticketTiers)
+        try container.encode(guestCap, forKey: .guestCap)
+        try container.encode(currentAttendees, forKey: .currentAttendees)
+        try container.encode(isPublic, forKey: .isPublic)
+        try container.encode(tags, forKey: .tags)
+        try container.encodeIfPresent(flyerImageURL, forKey: .flyerImageURL)
+        try container.encodeIfPresent(landingPageURL, forKey: .landingPageURL)
+        try container.encode(perks, forKey: .perks)
+        try container.encode(status, forKey: .status)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(analytics, forKey: .analytics)
+        try container.encodeIfPresent(viewCount, forKey: .viewCount)
+        try container.encodeIfPresent(clickCount, forKey: .clickCount)
+        try container.encodeIfPresent(capacity, forKey: .capacity)
+        try container.encode(attendees, forKey: .attendees)
+    }
+}
+
  

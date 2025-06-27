@@ -50,8 +50,17 @@ class FriendsManager: ObservableObject {
     }
     
     // MARK: - Real-time Listener Management
+    private var isListenersActive = false
+    private var currentListenerUserId: String?
+    
     func startRealtimeListeners() {
         guard let currentUserId = getCurrentUserId() else { return }
+        
+        // Prevent duplicate listeners for same user
+        if isListenersActive && currentListenerUserId == currentUserId {
+            print("🔄 Listeners already active for user: \(currentUserId)")
+            return
+        }
         
         print("🔄 Starting real-time listeners for user: \(currentUserId)")
         
@@ -63,6 +72,9 @@ class FriendsManager: ObservableObject {
         startFriendRequestsListener(for: currentUserId)
         startOutgoingRequestsListener(for: currentUserId)
         startUserUpdatesListener(for: currentUserId)
+        
+        isListenersActive = true
+        currentListenerUserId = currentUserId
     }
     
     func stopAllListeners() {
@@ -75,6 +87,9 @@ class FriendsManager: ObservableObject {
         friendRequestsListener = nil
         outgoingRequestsListener = nil
         userUpdatesListener = nil
+        
+        isListenersActive = false
+        currentListenerUserId = nil
         
         print("🛑 All real-time listeners stopped")
     }
@@ -107,6 +122,15 @@ class FriendsManager: ObservableObject {
     }
     
     private func loadFriendsDetails(friendIds: [String]) async {
+        // Prevent excessive loading by checking if friend IDs actually changed
+        let currentFriendIds = Set(friends.map { $0.id })
+        let newFriendIds = Set(friendIds)
+        
+        if currentFriendIds == newFriendIds && !friends.isEmpty {
+            // No change in friend list, skip loading
+            return
+        }
+        
         var loadedFriends: [AppUser] = []
         
         for friendId in friendIds {
@@ -131,8 +155,11 @@ class FriendsManager: ObservableObject {
         }
         
         await MainActor.run {
-            self.friends = loadedFriends
-            print("✅ Real-time friends update: \(loadedFriends.count) friends")
+            // Only update if there's actually a change
+            if Set(self.friends.map { $0.id }) != Set(loadedFriends.map { $0.id }) {
+                self.friends = loadedFriends
+                print("✅ Real-time friends update: \(loadedFriends.count) friends")
+            }
         }
     }
     
@@ -259,9 +286,18 @@ class FriendsManager: ObservableObject {
                     return
                 }
                 
-                // This ensures our auth service stays synchronized
-                if let document = documentSnapshot, document.exists {
-                    print("🔄 User profile updated in real-time")
+                // FIXED: Only log and process meaningful changes, add debouncing
+                guard let document = documentSnapshot, 
+                      document.exists,
+                      let data = document.data() else { return }
+                
+                // Only process if friends array actually changed (not just any document update)
+                if let friendIds = data["friends"] as? [String] {
+                    let currentFriendIds = self?.friends.map { $0.id } ?? []
+                    if Set(friendIds) != Set(currentFriendIds) {
+                        print("🔄 User friends list updated in real-time")
+                        // The friends listener will handle this update
+                    }
                 }
                 
                 // Prevent unused variable warning

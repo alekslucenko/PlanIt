@@ -76,7 +76,8 @@ struct UpdatedProfileView: View {
             LoginView(
                 onboardingData: nil,
                 userName: authService.userDisplayName.isEmpty ? "User" : authService.userDisplayName,
-                onAuthComplete: { showingLogin = false }
+                onAuthComplete: { showingLogin = false },
+                isForExistingUser: true
             )
             .environmentObject(authService)
         }

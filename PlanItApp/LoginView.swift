@@ -19,11 +19,28 @@ struct LoginView: View {
     let userName: String
     let onAuthComplete: () -> Void
     
+    // NEW: Flag to indicate if this is for existing users only
+    let isForExistingUser: Bool
+    
+    // Computed property that combines the flags for easier detection
+    var isExistingUserLogin: Bool {
+        // FIXED: Use explicit flag when available, fallback to onboarding data check
+        return isForExistingUser || (onboardingData != nil)
+    }
+    
     // Shared focus state for keyboard management
     @FocusState private var focusedField: Field?
     
     enum Field: Hashable {
         case email, password, confirmPassword, displayName
+    }
+    
+    // Initialize with explicit existing user flag
+    init(onboardingData: OnboardingData?, userName: String, onAuthComplete: @escaping () -> Void, isForExistingUser: Bool = false) {
+        self.onboardingData = onboardingData
+        self.userName = userName
+        self.onAuthComplete = onAuthComplete
+        self.isForExistingUser = isForExistingUser
     }
     
     var body: some View {
@@ -74,54 +91,66 @@ struct LoginView: View {
                         
                         // Auth Mode Toggle
                         VStack(spacing: 20) {
-                            HStack(spacing: 0) {
-                                Button(action: { 
-                                    withAnimation(.easeInOut(duration: 0.3)) {
-                                        isSignUp = false 
-                                        focusedField = nil // Dismiss keyboard when switching
+                            // FIXED: Only show toggle if this is NOT an existing user login
+                            if !isExistingUserLogin {
+                                HStack(spacing: 0) {
+                                    Button(action: { 
+                                        withAnimation(.easeInOut(duration: 0.3)) {
+                                            isSignUp = false 
+                                            focusedField = nil // Dismiss keyboard when switching
+                                        }
+                                    }) {
+                                        Text("Sign In")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundColor(isSignUp ? .white.opacity(0.7) : .white)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 12)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 12)
+                                                    .fill(isSignUp ? Color.clear : Color.white.opacity(0.2))
+                                            )
                                     }
-                                }) {
-                                    Text("Sign In")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundColor(isSignUp ? .white.opacity(0.7) : .white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 12)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .fill(isSignUp ? Color.clear : Color.white.opacity(0.2))
-                                        )
-                                }
-                                
-                                Button(action: { 
-                                    withAnimation(.easeInOut(duration: 0.3)) {
-                                        isSignUp = true 
-                                        focusedField = nil // Dismiss keyboard when switching
+                                    
+                                    Button(action: { 
+                                        withAnimation(.easeInOut(duration: 0.3)) {
+                                            isSignUp = true 
+                                            focusedField = nil // Dismiss keyboard when switching
+                                        }
+                                    }) {
+                                        Text("Sign Up")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundColor(isSignUp ? .white : .white.opacity(0.7))
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 12)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 12)
+                                                    .fill(isSignUp ? Color.white.opacity(0.2) : Color.clear)
+                                            )
                                     }
-                                }) {
-                                    Text("Sign Up")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundColor(isSignUp ? .white : .white.opacity(0.7))
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 12)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .fill(isSignUp ? Color.white.opacity(0.2) : Color.clear)
-                                        )
                                 }
+                                .padding(4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(Color.white.opacity(0.1))
+                                )
+                                .padding(.horizontal, 40)
+                                .scaleEffect(isAnimating ? 1 : 0.8)
+                                .opacity(isAnimating ? 1 : 0)
+                                .animation(.spring(response: 0.8, dampingFraction: 0.6).delay(0.5), value: isAnimating)
+                            } else {
+                                // Show only "Sign In" title for existing users
+                                Text("Welcome Back!")
+                                    .font(.system(size: 24, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .scaleEffect(isAnimating ? 1 : 0.8)
+                                    .opacity(isAnimating ? 1 : 0)
+                                    .animation(.spring(response: 0.8, dampingFraction: 0.6).delay(0.5), value: isAnimating)
                             }
-                            .padding(4)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(Color.white.opacity(0.1))
-                            )
-                            .padding(.horizontal, 40)
-                            .scaleEffect(isAnimating ? 1 : 0.8)
-                            .opacity(isAnimating ? 1 : 0)
-                            .animation(.spring(response: 0.8, dampingFraction: 0.6).delay(0.5), value: isAnimating)
                             
                             // Form fields with standardized styling
                             VStack(spacing: 16) {
-                                if isSignUp {
+                                // FIXED: Only show display name field for signup AND not existing user
+                                if isSignUp && !isExistingUserLogin {
                                     SharedTextField(
                                         title: "Display Name",
                                         text: $displayName,
@@ -151,7 +180,8 @@ struct LoginView: View {
                                     fieldType: .password
                                 )
                                 
-                                if isSignUp {
+                                // FIXED: Only show confirm password for signup AND not existing user
+                                if isSignUp && !isExistingUserLogin {
                                     SharedSecureField(
                                         title: "Confirm Password",
                                         text: $confirmPassword,
@@ -171,10 +201,11 @@ struct LoginView: View {
                             Button(action: {
                                 focusedField = nil // Dismiss keyboard before submitting
                                 Task {
-                                    if isSignUp {
-                                        await handleSignUp()
-                                    } else {
+                                    // FIXED: Force sign in for existing users, otherwise use toggle
+                                    if isExistingUserLogin || !isSignUp {
                                         await handleSignIn()
+                                    } else {
+                                        await handleSignUp()
                                     }
                                 }
                             }) {
@@ -185,7 +216,8 @@ struct LoginView: View {
                                             .foregroundColor(.black)
                                     }
                                     
-                                    Text(isSignUp ? "Create Account" : "Sign In")
+                                    // FIXED: Show appropriate text based on context
+                                    Text(isExistingUserLogin ? "Sign In" : (isSignUp ? "Create Account" : "Sign In"))
                                         .font(.system(size: 16, weight: .semibold))
                                         .foregroundColor(.black)
                                     
@@ -294,9 +326,18 @@ struct LoginView: View {
             withAnimation {
                 isAnimating = true
             }
-            // Pre-fill display name if provided
-            if isSignUp && displayName.isEmpty {
-                displayName = userName
+            
+            // FIXED: Set initial state for existing users
+            if isExistingUserLogin {
+                isSignUp = false // Force sign in mode
+                if displayName.isEmpty {
+                    displayName = userName
+                }
+            } else {
+                // Pre-fill display name if provided for new signups
+                if isSignUp && displayName.isEmpty {
+                    displayName = userName
+                }
             }
         }
         .onChange(of: authService.errorMessage) { _, error in
@@ -308,24 +349,38 @@ struct LoginView: View {
             if isAuthenticated {
                 print("🔑 LoginView: Authentication successful, completing onboarding...")
                 
-                // Initialize user fingerprint with onboarding data
+                // CRITICAL: Call completion callback first to trigger UI transition
+                onAuthComplete()
+                
+                // Initialize user fingerprint with onboarding data if available
                 if let data = onboardingData {
                     Task {
                         await initializeUserFingerprint(with: data)
+                        // Small delay before dismissing to ensure transition
+                        try? await Task.sleep(for: .milliseconds(500))
                         await MainActor.run {
-                            onAuthComplete()
                             dismiss()
                         }
                     }
                 } else {
-                    onAuthComplete()
-                    dismiss()
+                    // For existing users without onboarding data, dismiss with small delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        dismiss()
+                    }
                 }
             }
         }
     }
     
     private var isFormValid: Bool {
+        // FIXED: For existing users, only validate email and password
+        if isExistingUserLogin {
+            return !email.isEmpty && 
+                   !password.isEmpty && 
+                   email.contains("@")
+        }
+        
+        // For new users with signup toggle
         if isSignUp {
             return !email.isEmpty && 
                    !password.isEmpty && 
@@ -344,10 +399,9 @@ struct LoginView: View {
     private func handleSignIn() async {
         await authService.signInWithEmail(email, password: password)
         
-        // Call completion callback after successful signin
-        if authService.isAuthenticated {
-            onAuthComplete()
-        }
+        // FIXED: Always call completion callback after attempting signin
+        // The onChange listener will handle the actual success case
+        print("🔑 LoginView: Sign in attempt completed, isAuthenticated = \(authService.isAuthenticated)")
     }
     
     private func handleSignUp() async {
@@ -661,7 +715,8 @@ struct SharedSecureField: View {
     LoginView(
         onboardingData: nil,
         userName: "",
-        onAuthComplete: {}
+        onAuthComplete: {},
+        isForExistingUser: false
     )
     .environmentObject(AuthenticationService())
 }

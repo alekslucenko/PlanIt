@@ -446,7 +446,7 @@ struct PartyCreationView: View {
                         currentStep -= 1
                     }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(GlassButtonStyle(tint: themeManager.travelBlue))
             }
             
             Spacer()
@@ -457,8 +457,7 @@ struct PartyCreationView: View {
                         currentStep += 1
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(!canProceed)
+                .buttonStyle(GlassButtonStyle(tint: themeManager.travelBlue))
             } else {
                 Button(action: createParty) {
                     HStack {
@@ -472,8 +471,8 @@ struct PartyCreationView: View {
                         }
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(!canCreate || isCreating)
+                .buttonStyle(GlassButtonStyle(tint: themeManager.travelPink))
+                .disabled(!canProceed || isCreating)
             }
         }
         .padding()

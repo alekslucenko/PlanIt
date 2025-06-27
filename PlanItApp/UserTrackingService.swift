@@ -558,15 +558,24 @@ final class UserTrackingService: ObservableObject {
     }
     
     private func setupAppleDeviceIntegration() {
-        // Setup haptic feedback engine
+        // Setup haptic feedback engine with improved error handling
         do {
             hapticEngine = try CHHapticEngine()
             try hapticEngine?.start()
+            print("✅ Haptic engine initialized successfully")
+        } catch let error as CHHapticError {
+            print("⚠️ Haptic engine setup failed: \(error.localizedDescription)")
+            // Fallback to basic haptic feedback
+            hapticEngine = nil
         } catch {
-            print("❌ Haptic engine setup failed: \(error)")
+            print("❌ Unexpected haptic engine error: \(error)")
+            hapticEngine = nil
         }
         
-        // Setup device state notifications
+        // Initialize feedback generator as fallback
+        feedbackGenerator.prepare()
+        
+        // Setup device state notifications with better error handling
         NotificationCenter.default.addObserver(
             forName: UIDevice.batteryLevelDidChangeNotification,
             object: nil,
@@ -586,6 +595,8 @@ final class UserTrackingService: ObservableObject {
                 await self.recordDeviceStateChange(event: "orientation_changed")
             }
         }
+        
+        print("✅ Device integration setup completed with fallback mechanisms")
     }
     
     private func setupDeviceStateMonitoring() {

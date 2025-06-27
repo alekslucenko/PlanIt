@@ -68,6 +68,11 @@ class XPManager: ObservableObject {
     func startListeningForXPUpdates() {
         guard let userId = Auth.auth().currentUser?.uid else { return }
         
+        if userXPListener != nil {
+            print("⚠️ XP listener already active, skipping...")
+            return
+        }
+        
         isLoading = true
         
         userXPListener = db.collection("users").document(userId)
@@ -88,8 +93,19 @@ class XPManager: ObservableObject {
                     return
                 }
                 
-                Task { @MainActor in
-                    await self?.loadXPFromFirestore(data: data)
+                // FIXED: Add debouncing to prevent rapid updates
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    
+                    // Only process if we're not already processing or just processed recently
+                    let now = Date()
+                    // FIXED: Since lastXPUpdate is not optional, use regular comparison
+                    if now.timeIntervalSince(self.userXP.lastXPUpdate) < 1.0 {
+                        print("🔄 XP update too recent, skipping...")
+                        return
+                    }
+                    
+                    await self.loadXPFromFirestore(data: data)
                 }
             }
     }
@@ -100,6 +116,10 @@ class XPManager: ObservableObject {
             // Load basic XP data
             let currentXP = data["xp"] as? Int ?? 0
             let level = data["level"] as? Int ?? UserXP.calculateLevel(from: currentXP)
+            
+            // FIXED: Only log when there's an actual change
+            let previousXP = userXP.currentXP
+            let previousLevel = userXP.level
             
             // Load XP history
             var xpHistory: [XPEvent] = []
@@ -140,7 +160,11 @@ class XPManager: ObservableObject {
             self.weeklyXP = weeklyXP
             
             isLoading = false
-            print("✅ XP data loaded: \(currentXP) XP, Level \(level)")
+            
+            // FIXED: Only log when there's an actual change
+            if currentXP != previousXP || level != previousLevel {
+                print("✅ XP data loaded: \(currentXP) XP, Level \(level)")
+            }
             
         } catch {
             print("❌ Error loading XP data: \(error)")

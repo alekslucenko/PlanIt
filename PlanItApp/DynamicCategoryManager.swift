@@ -16,13 +16,250 @@ class DynamicCategoryManager: ObservableObject {
     @Published var lastGenerated = Date()
     @Published var isLoading = false
     @Published var isGeneratingCategories = false
+    @Published var isActive: Bool = false
+    
+    // Enhanced caching system
+    private let cacheQueue = DispatchQueue(label: "com.planit.categories", attributes: .concurrent)
+    private let categoriesCacheKey = "DynamicCategories_v2"
+    private let cacheTimestampKey = "DynamicCategoriesTimestamp_v2"
+    private let cacheTTL: TimeInterval = 3600 // 1 hour
     
     private let geminiService = GeminiAIService.shared
     private let fingerprintManager = UserFingerprintManager.shared
     private let placesService = GooglePlacesService()
     
+    private init() {
+        // Load cached categories immediately on initialization
+        loadCachedCategoriesSync()
+        print("🤖 DynamicCategoryManager initialized with \(dynamicCategories.count) cached categories")
+    }
+    
+    // MARK: - Instant Cache Loading
+    
+    /// Loads cached categories synchronously for immediate display
+    private func loadCachedCategoriesSync() {
+        guard let data = UserDefaults.standard.data(forKey: categoriesCacheKey),
+              let cached = try? JSONDecoder().decode([DynamicCategory].self, from: data),
+              let timestamp = UserDefaults.standard.object(forKey: cacheTimestampKey) as? Date else {
+            print("📦 No cached categories found")
+            return
+        }
+        
+        // Check if cache is still fresh (within TTL)
+        let now = Date()
+        if now.timeIntervalSince(timestamp) < cacheTTL {
+            DispatchQueue.main.async {
+                self.dynamicCategories = cached.shuffled() // Randomize for variety
+                self.lastGenerated = timestamp
+                print("📦 Loaded \(cached.count) fresh cached categories")
+            }
+        } else {
+            print("⏰ Cached categories expired, will regenerate")
+        }
+    }
+    
+    /// Async version for use in loading sequences
+    func loadCachedCategories() async {
+        await MainActor.run {
+            loadCachedCategoriesSync()
+        }
+    }
+    
+    // MARK: - Enhanced Cache Management
+    
+    private func saveCategoriesCache() {
+        cacheQueue.async(flags: .barrier) {
+            // Save categories
+            if let encoded = try? JSONEncoder().encode(self.dynamicCategories) {
+                UserDefaults.standard.set(encoded, forKey: self.categoriesCacheKey)
+            }
+            
+            // Save timestamp
+            UserDefaults.standard.set(Date(), forKey: self.cacheTimestampKey)
+            
+            print("💾 Saved \(self.dynamicCategories.count) categories to cache")
+        }
+    }
+    
+    func hasFreshCache() -> Bool {
+        guard let timestamp = UserDefaults.standard.object(forKey: cacheTimestampKey) as? Date else {
+            return false
+        }
+        return Date().timeIntervalSince(timestamp) < cacheTTL
+    }
+    
+    // MARK: - Enhanced Category Generation
+    
+
+    
+    private func generateCategoriesWithRetry(context: EnhancedContext, location: CLLocation, retries: Int = 2) async -> [DynamicCategory] {
+        for attempt in 0...retries {
+            let categories = await generateCategoriesFromAI(context: context, location: location)
+            if !categories.isEmpty {
+                return categories
+            }
+            
+            print("⚠️ Category generation attempt \(attempt + 1) failed")
+            if attempt < retries {
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay before retry
+            }
+        }
+        
+        // Final fallback
+        print("🔄 All AI generation attempts failed, using sample categories")
+        return createSampleCategories()
+    }
+    
+    private func generateCategoriesFromAI(context: EnhancedContext, location: CLLocation) async -> [DynamicCategory] {
+        // For now, return sample categories since the Gemini method needs to be implemented
+        // TODO: Implement proper AI category generation
+        print("🤖 Generating categories with AI (using samples for now)")
+        return createSampleCategories()
+    }
+    
+    private func buildEnhancedContext(location: CLLocation) async -> EnhancedContext {
+        let timeOfDay = getTimeOfDay()
+        let weather = await getWeatherContext(location: location)
+        let userPreferences = getUserPreferences()
+        
+        return EnhancedContext(
+            location: location,
+            userFingerprint: nil, // Will use UserFingerprint when available
+            timeOfDay: timeOfDay,
+            weather: weather,
+            userPreferences: userPreferences,
+            currentDate: Date()
+        )
+    }
+    
+    private func buildUltraPersonalizedCategoryPrompt(context: EnhancedContext) -> String {
+        return """
+        ULTRA-PERSONALIZED CATEGORY GENERATION
+        
+        USER CONTEXT:
+        - Time: \(context.timeOfDay)
+        - Weather: \(context.weather)
+        - Location: Near (\(context.location.coordinate.latitude), \(context.location.coordinate.longitude))
+        
+        USER PREFERENCES:
+        - Preferences: \(context.userPreferences.joined(separator: ", "))
+        
+        Generate 3-4 highly personalized place categories that match this user's preferences and current context.
+        
+        Each category should:
+        1. Be specific to their tastes and context
+        2. Consider the time of day and weather
+        3. Include an engaging emoji and title
+        4. Have a clear reason why it's recommended
+        
+        Return as JSON array of objects with: title, emoji, category, reasoning, places[]
+        """
+    }
+    
+    // MARK: - Sample Categories for Fallback
+    
+    func generateSampleCategories() {
+        let sampleCategories = createSampleCategories()
+        
+        DispatchQueue.main.async {
+            self.dynamicCategories = sampleCategories
+            self.lastGenerated = Date()
+            self.saveCategoriesCache()
+            print("📝 Generated \(sampleCategories.count) sample categories")
+        }
+    }
+    
+    private func createSampleCategories() -> [DynamicCategory] {
+        return [
+            DynamicCategory(
+                id: UUID().uuidString,
+                title: "Perfect Coffee Spots",
+                subtitle: "Great cafes for your coffee break",
+                reasoning: "AI-selected coffee shops that match your taste preferences",
+                searchQuery: "coffee cafe",
+                category: .cafes,
+                places: [],
+                confidence: 0.8,
+                personalizedEmoji: "☕"
+            ),
+            DynamicCategory(
+                id: UUID().uuidString,
+                title: "Dinner Discoveries",
+                subtitle: "Restaurants that match your taste",
+                reasoning: "Curated dining experiences based on your preferences",
+                searchQuery: "restaurant dining",
+                category: .restaurants,
+                places: [],
+                confidence: 0.7,
+                personalizedEmoji: "🍽️"
+            ),
+            DynamicCategory(
+                id: UUID().uuidString,
+                title: "Night Out Vibes",
+                subtitle: "Perfect spots for evening plans",
+                reasoning: "Handpicked bars and nightlife that suit your style",
+                searchQuery: "bar nightlife",
+                category: .bars,
+                places: [],
+                confidence: 0.6,
+                personalizedEmoji: "🍸"
+            )
+        ]
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func getTimeOfDay() -> String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 6..<12: return "morning"
+        case 12..<17: return "afternoon"
+        case 17..<21: return "evening"
+        default: return "night"
+        }
+    }
+    
+    private func getWeatherContext(location: CLLocation) async -> String {
+        // Simple weather context - could be enhanced with actual weather API
+        return "clear"
+    }
+    
+    private func getUserPreferences() -> [String] {
+        let favorites = FavoritesManager.shared.getFavoritesByCategory()
+        return favorites.keys.map { $0.displayName }
+    }
+    
+    // MARK: - Service Lifecycle
+    
+    func activate() {
+        isActive = true
+        print("🟢 DynamicCategoryManager activated")
+    }
+    
+    func deactivate() {
+        isActive = false
+        print("🔴 DynamicCategoryManager deactivated")
+    }
+    
+    // MARK: - Cache Statistics
+    
+    func getCacheInfo() -> String {
+        guard let timestamp = UserDefaults.standard.object(forKey: cacheTimestampKey) as? Date else {
+            return "No cache available"
+        }
+        
+        let age = Date().timeIntervalSince(timestamp)
+        let ageMinutes = Int(age / 60)
+        return "Categories: \(dynamicCategories.count), Age: \(ageMinutes)m"
+    }
+    
     /// Generates fresh dynamic categories based on user fingerprint
     func generateDynamicCategories(location: CLLocation) async {
+        guard isActive else {
+            print("⏸️ DynamicCategoryManager inactive – skipping dynamic category generation")
+            return
+        }
+        
         guard let userFingerprint = fingerprintManager.fingerprint else {
             print("❌ No user fingerprint available for category generation")
             await generateFallbackCategories(location: location)
@@ -967,4 +1204,15 @@ class DynamicCategoryManager: ObservableObject {
 enum UserReaction: String, CaseIterable {
     case liked = "liked"
     case disliked = "disliked"
+}
+
+// MARK: - Enhanced Context Model
+
+struct EnhancedContext {
+    let location: CLLocation
+    let userFingerprint: UserFingerprint?
+    let timeOfDay: String
+    let weather: String
+    let userPreferences: [String]
+    let currentDate: Date
 } 

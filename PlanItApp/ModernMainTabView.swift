@@ -22,6 +22,9 @@ struct ModernMainTabView: View, Equatable {
     // Performance optimization
     @State private var isTransitioning = false
     
+    // Prevent premature loading of user Explore view before we know host mode
+    @State private var hostModeInitialized = false
+    
     static func == (lhs: ModernMainTabView, rhs: ModernMainTabView) -> Bool {
         // Compare only the essential properties for performance
         return lhs.selectedTab == rhs.selectedTab &&
@@ -30,124 +33,166 @@ struct ModernMainTabView: View, Equatable {
     }
     
     var body: some View {
-        NavigationView {
+        GeometryReader { geometry in
             ZStack {
-                // Dynamic themed background
-                themeManager.backgroundGradient
-                    .ignoresSafeArea()
-                    .animation(.easeInOut(duration: 1.0), value: themeManager.isDarkMode)
-                
-                // CONDITIONAL CONTENT BASED ON HOST MODE
-                if partyManager.isHostMode {
-                    hostModeContent
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .trailing).combined(with: .opacity),
-                            removal: .move(edge: .leading).combined(with: .opacity)
-                        ))
+                // Block UI with background until hostModeInitialized to avoid premature view creation
+                if !hostModeInitialized {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: themeManager.accentBlue))
+                        .scaleEffect(1.4)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(themeManager.businessBackground.ignoresSafeArea())
                 } else {
-                    regularUserContent
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .leading).combined(with: .opacity),
-                            removal: .move(edge: .trailing).combined(with: .opacity)
-                        ))
-                }
-                
-                // Floating notification overlay
-                if notificationManager.showInAppNotification,
-                   let notification = notificationManager.currentInAppNotification {
-                    VStack {
-                        InAppNotificationView(
-                            notification: notification,
-                            onTap: { handleNotificationTap(notification) },
-                            onDismiss: { notificationManager.hideInAppNotification() }
-                        )
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .top).combined(with: .opacity),
-                            removal: .move(edge: .top).combined(with: .opacity)
-                        ))
-                        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: notificationManager.showInAppNotification)
-                        
-                        Spacer()
-                    }
-                    .zIndex(1000)
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        showingProfile = true
-                    }) {
-                        HStack(spacing: 8) {
-                            if !authService.userPhotoURL.isEmpty, let url = URL(string: authService.userPhotoURL) {
-                                AsyncImage(url: url) { image in
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    Circle()
-                                        .fill(themeManager.isDarkMode ? themeManager.neonPurple : themeManager.accentBlue)
-                                        .overlay(
-                                            Image(systemName: "person.fill")
-                                                .font(.system(size: 14, weight: .medium))
-                                                .foregroundColor(.white)
-                                        )
-                                }
-                                .frame(width: 32, height: 32)
-                                .clipShape(Circle())
-                                .overlay(
-                                    Circle()
-                                        .stroke(
-                                            partyManager.isHostMode ? themeManager.accentGold : themeManager.accentBlue,
-                                            lineWidth: 2
-                                        )
-                                )
-                            } else {
-                                Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: partyManager.isHostMode ? 
-                                            [themeManager.accentGold, themeManager.accentGold.opacity(0.8)] :
-                                            [themeManager.isDarkMode ? themeManager.neonPurple : themeManager.accentBlue, 
-                                             themeManager.isDarkMode ? themeManager.neonPink : themeManager.accentBlue.opacity(0.8)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .frame(width: 32, height: 32)
-                                    .overlay(
-                                        Text(authService.userDisplayName.isEmpty ? "U" : String(authService.userDisplayName.prefix(1)).uppercased())
-                                            .font(.system(size: 14, weight: .bold))
-                                            .foregroundColor(.white)
-                                    )
-                                    .shadow(
-                                        color: partyManager.isHostMode ? 
-                                        themeManager.accentGold.opacity(0.4) : 
-                                        themeManager.isDarkMode ? themeManager.neonPurple.opacity(0.4) : themeManager.accentBlue.opacity(0.4),
-                                        radius: 8,
-                                        x: 0,
-                                        y: 4
-                                    )
-                            }
+                    // Dynamic themed background
+                    themeManager.businessBackground
+                        .ignoresSafeArea(.all)
+                    
+                    VStack(spacing: 0) {
+                        // CONDITIONAL CONTENT BASED ON HOST MODE
+                        if partyManager.isHostMode {
+                            hostModeContent
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
+                        } else {
+                            regularUserContent
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .trailing).combined(with: .opacity)
+                                ))
                         }
                     }
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: partyManager.isHostMode)
+                    
+                    // Floating notification overlay
+                    if notificationManager.showInAppNotification,
+                       let notification = notificationManager.currentInAppNotification {
+                        VStack {
+                            InAppNotificationView(
+                                notification: notification,
+                                onTap: { handleNotificationTap(notification) },
+                                onDismiss: { notificationManager.hideInAppNotification() }
+                            )
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .top).combined(with: .opacity),
+                                removal: .move(edge: .top).combined(with: .opacity)
+                            ))
+                            .animation(.spring(response: 0.6, dampingFraction: 0.8), value: notificationManager.showInAppNotification)
+                            .padding(.top, geometry.safeAreaInsets.top)
+                            
+                            Spacer()
+                        }
+                        .zIndex(1000)
+                    }
                 }
             }
-            .sheet(isPresented: $showingProfile) {
-                ProfileViewWrapper()
-                    .environmentObject(authService)
-                    .environmentObject(locationManager)
-                    .environmentObject(partyManager)
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    showingProfile = true
+                }) {
+                    HStack(spacing: 8) {
+                        if !authService.userPhotoURL.isEmpty, let url = URL(string: authService.userPhotoURL) {
+                            AsyncImage(url: url) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                Circle()
+                                    .fill(themeManager.isDarkMode ? themeManager.neonPurple : themeManager.accentBlue)
+                                    .overlay(
+                                        Image(systemName: "person.fill")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(.white)
+                                    )
+                            }
+                            .frame(width: 32, height: 32)
+                            .clipShape(Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        partyManager.isHostMode ? themeManager.accentGold : themeManager.accentBlue,
+                                        lineWidth: 2
+                                    )
+                            )
+                        } else {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: partyManager.isHostMode ? 
+                                        [themeManager.accentGold, themeManager.accentGold.opacity(0.8)] :
+                                        [themeManager.isDarkMode ? themeManager.neonPurple : themeManager.accentBlue, 
+                                         themeManager.isDarkMode ? themeManager.neonPink : themeManager.accentBlue.opacity(0.8)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 32, height: 32)
+                                .overlay(
+                                    Text(authService.userDisplayName.isEmpty ? "U" : String(authService.userDisplayName.prefix(1)).uppercased())
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.white)
+                                )
+                                .shadow(
+                                    color: partyManager.isHostMode ? 
+                                    themeManager.accentGold.opacity(0.4) : 
+                                    themeManager.isDarkMode ? themeManager.neonPurple.opacity(0.4) : themeManager.accentBlue.opacity(0.4),
+                                    radius: 8,
+                                    x: 0,
+                                    y: 4
+                                )
+                        }
+                    }
+                }
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: partyManager.isHostMode)
             }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
+        .sheet(isPresented: $showingProfile) {
+            ProfileViewWrapper()
+                .environmentObject(authService)
+                .environmentObject(locationManager)
+                .environmentObject(partyManager)
+        }
         .preferredColorScheme(themeManager.colorScheme)
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .onAppear {
+            #if DEBUG
             print("🔄 ModernMainTabView appeared - checking host mode")
+            #endif
+            // Initialize services only when needed
+            PlaceDataService.shared.deactivate()
+            DynamicCategoryManager.shared.deactivate()
+            
+            // Initialize FriendsManager with proper service references
+            let friendsManager = FriendsManager()
+            friendsManager.setAuthService(authService)
+            friendsManager.setNotificationManager(notificationManager)
+
             Task {
                 await partyManager.checkHostMode()
+                await MainActor.run {
+                    hostModeInitialized = true
+                    
+                    print("🔍 Host mode check completed: isHostMode = \(partyManager.isHostMode)")
+                    print("🔍 Will show: \(partyManager.isHostMode ? "BUSINESS" : "USER") interface")
+                    
+                    // Start friends listeners only after host mode is determined and for regular users
+                    if !partyManager.isHostMode {
+                        print("👥 Starting friends listeners for user mode")
+                        friendsManager.startRealtimeListeners()
+                        
+                        // Ensure correct tab is selected for users
+                        selectedTab = .explore
+                        showTabBar = true
+                    } else {
+                        print("🏢 User is in host mode - showing business interface")
+                        selectedHostTab = .dashboard
+                    }
+                }
             }
         }
         .onReceive(partyManager.$isHostMode) { isHost in
@@ -195,97 +240,112 @@ struct ModernMainTabView: View, Equatable {
         .performanceOptimized(identifier: "MainTabView")
     }
     
-    // MARK: - Host Mode Content
-    
+    // MARK: - Host Mode Content (FIXED LAYOUT)
     private var hostModeContent: some View {
-        VStack(spacing: 0) {
-            // HOST MODE NAVIGATION
-            TabView(selection: $selectedHostTab) {
-                // Host Dashboard
-                HostAnalyticsView()
-                    .tag(HostTabItem.dashboard)
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                // HOST MODE NAVIGATION
+                TabView(selection: $selectedHostTab) {
+                    // Host Dashboard - CONSOLIDATED ANALYTICS
+                    HostAnalyticsView()
+                        .tag(HostTabItem.dashboard)
+                    
+                    // Party Management
+                    HostPartiesView()
+                        .environmentObject(partyManager)
+                        .tag(HostTabItem.parties)
+                    
+                    // Celebrity Booking
+                    CelebrityBookingView()
+                        .tag(HostTabItem.celebrity)
+                    
+                    // Security Booking
+                    SecurityBookingView()
+                        .tag(HostTabItem.security)
+                    
+                    // Profile
+                    UpdatedProfileView()
+                        .environmentObject(authService)
+                        .environmentObject(locationManager)
+                        .tag(HostTabItem.profile)
+                }
+                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+                .frame(height: geometry.size.height - 100) // Leave space for tab bar
+                .id("host_\(selectedHostTab.rawValue)_\(refreshID)")
                 
-                // Business Analytics
-                HostAnalyticsView()
-                    .tag(HostTabItem.analytics)
-                
-                // Party Management
-                HostPartiesView()
-                    .tag(HostTabItem.parties)
-                
-                // Celebrity Booking
-                CelebrityBookingView()
-                    .tag(HostTabItem.celebrity)
-                
-                // Security Booking
-                SecurityBookingView()
-                    .tag(HostTabItem.security)
-                
-                // Concierge Services
-                ConciergeServicesView()
-                    .tag(HostTabItem.concierge)
+                // Host Tab Bar with Neon Glow - LOCKED AT BOTTOM
+                if showTabBar {
+                    EnhancedHostTabBar(selectedTab: $selectedHostTab, showTabBar: $showTabBar)
+                        .frame(height: 100)
+                        .background(
+                            Rectangle()
+                                .fill(themeManager.businessBackground)
+                                .ignoresSafeArea(.all, edges: .bottom)
+                        )
+                }
             }
-            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
-            .id("host_\(selectedHostTab.rawValue)_\(refreshID)")
-            
-            // Host Tab Bar with Neon Glow
-            if showTabBar {
-                HostTabBar(selectedTab: $selectedHostTab, showTabBar: $showTabBar)
-                    .animation(performanceService.getOptimizedSpringAnimation(), value: showTabBar)
-            }
+            .ignoresSafeArea(.container, edges: .bottom)
         }
     }
     
-    // MARK: - Regular User Content
-    
+    // MARK: - Regular User Content (FIXED LAYOUT)
     private var regularUserContent: some View {
-        VStack(spacing: 0) {
-            // REGULAR USER NAVIGATION - REMOVED PROFILE TAB
-            TabView(selection: $selectedTab) {
-                // Discover Tab - Enhanced Main Screen
-                ModernMainScreen(locationManager: locationManager)
-                    .tag(TabItem.explore)
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                // REGULAR USER NAVIGATION
+                TabView(selection: $selectedTab) {
+                    // Discover Tab - Enhanced Main Screen
+                    ModernMainScreen(locationManager: locationManager)
+                        .tag(TabItem.explore)
+                    
+                    // Parties Tab - User-focused view for browsing parties
+                    UserPartiesView()
+                        .environmentObject(partyManager)
+                        .tag(TabItem.parties)
+                    
+                    // Quests Tab
+                    MissionsView(missionManager: missionManager, xpManager: xpManager)
+                        .tag(TabItem.missions)
+                    
+                    // Friends Tab
+                    ModernFriendsView()
+                        .tag(TabItem.friends)
+                    
+                    // Favorites Tab
+                    ModernFavoritesView()
+                        .tag(TabItem.favorites)
+                }
+                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+                .frame(height: geometry.size.height - 100) // Leave space for tab bar
+                .id("userTab_\(selectedTab.rawValue)_\(refreshID)")
+                .animation(performanceService.shouldReduceAnimations() ? .none : .easeInOut(duration: 0.2), value: selectedTab)
                 
-                // Parties Tab - PROPERLY FIXED NAVIGATION
-                PartiesView()
-                    .onAppear {
-                        print("🎉 PartiesView appeared via navigation")
-                    }
-                    .tag(TabItem.parties)
-                
-                // Quests Tab
-                MissionsView(missionManager: missionManager, xpManager: xpManager)
-                    .tag(TabItem.missions)
-                
-                // Friends Tab
-                ModernFriendsView()
-                    .tag(TabItem.friends)
-                
-                // Favorites Tab - Comprehensive FavoritesView
-                ModernFavoritesView()
-                    .tag(TabItem.favorites)
-            }
-            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
-            .id("userTab_\(selectedTab.rawValue)_\(refreshID)")
-            .animation(performanceService.shouldReduceAnimations() ? .none : .easeInOut(duration: 0.2), value: selectedTab)
-            .onAppear {
-                print("🔄 Regular user content appeared with selected tab: \(selectedTab.rawValue)")
-            }
-            .onChange(of: selectedTab) { _, newTab in
-                print("🔄 Tab changed to: \(newTab.rawValue)")
-                if newTab == .parties {
-                    print("🎉 Navigating to parties view!")
-                    // Force refresh parties data when navigating to parties
-                    Task {
-                        await partyManager.checkHostMode()
-                    }
+                // USER TAB BAR - ALWAYS VISIBLE IN USER MODE
+                if showTabBar {
+                    FuturisticTabBar(selectedTab: $selectedTab, showTabBar: $showTabBar)
+                        .frame(height: 100)
+                        .background(
+                            Rectangle()
+                                .fill(themeManager.primaryBackground)
+                                .ignoresSafeArea(.all, edges: .bottom)
+                        )
                 }
             }
-            
-            // Futuristic Tab Bar with Neon Glow (without profile)
-            if showTabBar {
-                FuturisticTabBarWithoutProfile(selectedTab: $selectedTab, showTabBar: $showTabBar)
-                    .animation(performanceService.getOptimizedSpringAnimation(), value: showTabBar)
+            .ignoresSafeArea(.container, edges: .bottom)
+            .onAppear {
+                #if DEBUG
+                print("🔄 Regular user content appeared with selected tab: \(selectedTab.rawValue)")
+                #endif
+                // CRITICAL: Always ensure tab bar is visible in user mode
+                showTabBar = true
+                print("🔧 User mode: Tab bar forced to visible")
+            }
+            .onChange(of: selectedTab) { _, newTab in
+                #if DEBUG
+                print("🔄 Tab changed to: \(newTab.rawValue)")
+                #endif
+                // Always keep tab bar visible in user mode
+                showTabBar = true
             }
         }
     }
@@ -293,9 +353,9 @@ struct ModernMainTabView: View, Equatable {
     // MARK: - ENHANCED Host Mode Change Handler
     
     private func handleHostModeChange(_ isHost: Bool) {
-        guard !isTransitioning else { 
+        guard !isTransitioning else {
             print("⚠️ Host mode change ignored - transition in progress")
-            return 
+            return
         }
         
         isTransitioning = true
@@ -305,11 +365,29 @@ struct ModernMainTabView: View, Equatable {
         // Use performance-optimized animation with immediate UI update
         withAnimation(performanceService.getOptimizedSpringAnimation()) {
             if isHost {
+                // Deactivate heavy user-facing services and friends listeners
+                PlaceDataService.shared.deactivate()
+                DynamicCategoryManager.shared.deactivate()
+                
+                // Stop friends listeners in host mode to save resources
+                let friendsManager = FriendsManager()
+                friendsManager.stopAllListeners()
+                
                 selectedHostTab = .dashboard
                 print("✅ Switched to host mode - Dashboard tab selected")
             } else {
+                // Reactivate services for user mode
                 selectedTab = .explore
+                showTabBar = true
                 print("✅ Switched to user mode - Explore tab selected")
+                PlaceDataService.shared.activate()
+                DynamicCategoryManager.shared.activate()
+                
+                // Restart friends listeners for user mode
+                let friendsManager = FriendsManager()
+                friendsManager.setAuthService(authService)
+                friendsManager.setNotificationManager(notificationManager)
+                friendsManager.startRealtimeListeners()
             }
             
             // Force UI refresh with new ID
@@ -714,330 +792,488 @@ struct ModernMainScreenWrapper: View {
 
 enum HostTabItem: String, CaseIterable {
     case dashboard = "Dashboard"
-    case analytics = "Analytics"
     case parties = "Parties"
     case celebrity = "Celebrity"
     case security = "Security"
-    case concierge = "Concierge"
+    case profile = "Profile"
     
     var iconName: String {
         switch self {
         case .dashboard: return "chart.bar.fill"
-        case .analytics: return "chart.line.uptrend.xyaxis"
         case .parties: return "party.popper"
         case .celebrity: return "star.fill"
         case .security: return "shield.fill"
-        case .concierge: return "bell.fill"
+        case .profile: return "person.fill"
         }
     }
     
     var iconNameUnselected: String {
         switch self {
         case .dashboard: return "chart.bar"
-        case .analytics: return "chart.line.uptrend.xyaxis"
         case .parties: return "party.popper"
         case .celebrity: return "star"
         case .security: return "shield"
-        case .concierge: return "bell"
+        case .profile: return "person"
         }
     }
 }
 
-// MARK: - ENHANCED Host Tab Bar with Neon Glow
-struct HostTabBar: View {
+// MARK: - Enhanced Host Tab Bar (Exact Image Match)
+struct EnhancedHostTabBar: View {
     @Binding var selectedTab: HostTabItem
     @Binding var showTabBar: Bool
     @StateObject private var themeManager = ThemeManager.shared
-    @StateObject private var performanceService = PerformanceOptimizationService.shared
+    @StateObject private var partyManager = PartyManager.shared
     
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(HostTabItem.allCases, id: \.self) { tab in
-                HostTabButton(
-                    tab: tab,
-                    isSelected: selectedTab == tab,
-                    action: {
-                        withAnimation(performanceService.getOptimizedSpringAnimation()) {
-                            selectedTab = tab
-                        }
-                    }
-                )
-                .frame(maxWidth: .infinity)
+        VStack(spacing: 0) {
+            // Tab Bar Background
+            HStack(spacing: 0) {
+                ForEach(HostTabItem.allCases, id: \.self) { tab in
+                    hostTabButton(tab: tab)
+                }
             }
-        }
-        .padding(.vertical, 16)
-        .padding(.horizontal, 20)
-        .background(
-            RoundedRectangle(cornerRadius: 28)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            themeManager.accentGold.opacity(0.1),
-                            themeManager.accentGold.opacity(0.05)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(
+                Rectangle()
+                    .fill(Color.black)
+                    .overlay(
+                        Rectangle()
+                            .fill(Color.white.opacity(0.1))
+                            .frame(height: 0.5),
+                        alignment: .top
                     )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 28)
-                        .stroke(
-                            themeManager.isDarkMode ? Color.white.opacity(0.1) : Color.black.opacity(0.05),
-                            lineWidth: 1
-                        )
-                )
-        )
-        .shadow(
-            color: themeManager.isDarkMode ? Color.black.opacity(0.3) : Color.black.opacity(0.1),
-            radius: 12,
-            x: 0,
-            y: 4
-        )
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
+            )
+        }
+    }
+    
+    private func hostTabButton(tab: HostTabItem) -> some View {
+        Button(action: {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedTab = tab
+            }
+        }) {
+            VStack(spacing: 4) {
+                Image(systemName: selectedTab == tab ? tab.iconName : tab.iconNameUnselected)
+                    .font(.inter(20, weight: selectedTab == tab ? .semibold : .medium))
+                    .foregroundColor(selectedTab == tab ? .white : .white.opacity(0.5))
+                
+                Text(tab.rawValue)
+                    .font(.inter(10, weight: selectedTab == tab ? .semibold : .medium))
+                    .foregroundColor(selectedTab == tab ? .white : .white.opacity(0.5))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
-// MARK: - ENHANCED Host Tab Button with Neon Glow
-struct HostTabButton: View {
-    let tab: HostTabItem
+// MARK: - ENHANCED Host Parties View (FIXED LAYOUT)
+struct HostPartiesView: View {
+    @EnvironmentObject var partyManager: PartyManager
+    @StateObject private var themeManager = ThemeManager.shared
+    @State private var showingCreateParty = false
+    @State private var selectedParty: Party?
+    @State private var searchText = ""
+    @State private var selectedFilter = PartyFilter.all
+    @State private var animateCards = false
+    
+    enum PartyFilter: String, CaseIterable {
+        case all = "All Events"
+        case upcoming = "Upcoming"
+        case live = "Live"
+        case completed = "Completed"
+        case cancelled = "Cancelled"
+        
+        var iconName: String {
+            switch self {
+            case .all: return "calendar"
+            case .upcoming: return "clock"
+            case .live: return "dot.radiowaves.left.and.right"
+            case .completed: return "checkmark.circle"
+            case .cancelled: return "xmark.circle"
+            }
+        }
+        
+        var color: Color {
+            switch self {
+            case .all: return .blue
+            case .upcoming: return .orange
+            case .live: return .green
+            case .completed: return .gray
+            case .cancelled: return .red
+            }
+        }
+    }
+    
+    var filteredParties: [Party] {
+        var parties = partyManager.hostParties
+        
+        // Apply search filter
+        if !searchText.isEmpty {
+            parties = parties.filter { party in
+                party.title.localizedCaseInsensitiveContains(searchText) ||
+                party.description.localizedCaseInsensitiveContains(searchText) ||
+                party.location.name.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+        
+        // Apply status filter
+        switch selectedFilter {
+        case .all:
+            break
+        case .upcoming:
+            parties = parties.filter { $0.status == .upcoming }
+        case .live:
+            parties = parties.filter { $0.status == .live }
+        case .completed:
+            parties = parties.filter { $0.status == .ended }
+        case .cancelled:
+            parties = parties.filter { $0.status == .cancelled }
+        }
+        
+        return parties.sorted { $0.startDate > $1.startDate }
+    }
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                themeManager.businessBackground
+                    .ignoresSafeArea(.all)
+                
+                VStack(spacing: 0) {
+                    // Header Section with proper safe area
+                    headerSection
+                        .padding(.top, geometry.safeAreaInsets.top + 10)
+                    
+                    // Filter Section
+                    filterSection
+                        .padding(.top, 16)
+                    
+                    // Content Area
+                    if filteredParties.isEmpty {
+                        emptyStateView
+                    } else {
+                        partiesListView
+                    }
+                    
+                    // Bottom spacer for tab bar
+                    Spacer(minLength: 100)
+                }
+            }
+        }
+        .ignoresSafeArea(.container, edges: .top)
+        .sheet(isPresented: $showingCreateParty) {
+            PartyCreationView()
+        }
+        .sheet(item: $selectedParty) { party in
+            PartyDetailView(party: party)
+        }
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.8)) {
+                animateCards = true
+            }
+        }
+    }
+    
+    private var headerSection: some View {
+        VStack(spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Event Management")
+                        .font(.geist(28, weight: .bold))
+                        .foregroundColor(themeManager.businessText)
+                    
+                    Text("Manage your hosted events and track performance")
+                        .font(.geist(14, weight: .medium))
+                        .foregroundColor(themeManager.businessSecondaryText)
+                        .lineLimit(2)
+                }
+                
+                Spacer(minLength: 10)
+                
+                Button(action: { showingCreateParty = true }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                        Text("Create Event")
+                    }
+                    .font(.geist(12, weight: .semibold))
+                }
+                .buttonStyle(GlassButtonStyle(tint: themeManager.businessAccent))
+            }
+            
+            // Search bar
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(themeManager.businessSecondaryText)
+                    .font(.system(size: 14, weight: .medium))
+                
+                TextField("Search events...", text: $searchText)
+                    .font(.geist(14, weight: .medium))
+                    .foregroundColor(themeManager.businessText)
+                
+                if !searchText.isEmpty {
+                    Button(action: {
+                        searchText = ""
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(themeManager.businessSecondaryText)
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(themeManager.businessCardBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(themeManager.businessBorder, lineWidth: 1)
+                    )
+            )
+        }
+        .padding(.horizontal, 20)
+    }
+    
+    private var filterSection: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(PartyFilter.allCases, id: \.self) { filter in
+                    FilterChip(
+                        title: filter.rawValue,
+                        icon: filter.iconName,
+                        color: filter.color,
+                        isSelected: selectedFilter == filter
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            selectedFilter = filter
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+    
+    private var partiesListView: some View {
+        ScrollView(showsIndicators: false) {
+            LazyVStack(spacing: 12) {
+                ForEach(Array(filteredParties.enumerated()), id: \.element.id) { index, party in
+                    HostPartyCard(party: party) {
+                        selectedParty = party
+                    }
+                    .scaleEffect(animateCards ? 1.0 : 0.8)
+                    .opacity(animateCards ? 1.0 : 0)
+                    .animation(.easeOut(duration: 0.6).delay(Double(index) * 0.1), value: animateCards)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+        }
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "calendar.badge.plus")
+                .font(.system(size: 60, weight: .light))
+                .foregroundColor(themeManager.businessPrimary)
+            
+            VStack(spacing: 6) {
+                Text("No Events Found")
+                    .font(.geist(20, weight: .bold))
+                    .foregroundColor(themeManager.businessText)
+                
+                Text(searchText.isEmpty ? "Start hosting amazing events" : "Try adjusting your search criteria")
+                    .font(.geist(14, weight: .medium))
+                    .foregroundColor(themeManager.businessSecondaryText)
+                    .multilineTextAlignment(.center)
+            }
+            
+            if searchText.isEmpty {
+                Button(action: {
+                    showingCreateParty = true
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                        Text("Create Your First Event")
+                            .font(.geist(14, weight: .semibold))
+                    }
+                    .foregroundColor(themeManager.businessAccent)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(themeManager.businessPrimary)
+                    )
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 40)
+        .padding(.top, 40)
+    }
+}
+
+// MARK: - Filter Chip Component
+struct FilterChip: View {
+    let title: String
+    let icon: String
+    let color: Color
     let isSelected: Bool
     let action: () -> Void
     
     @StateObject private var themeManager = ThemeManager.shared
-    @StateObject private var performanceService = PerformanceOptimizationService.shared
-    @State private var isPressed = false
     
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 6) {
-                ZStack {
-                    // NEON GLOW BACKGROUND - Host Mode Style
-                    if isSelected {
-                        Circle()
-                            .fill(
-                                RadialGradient(
-                                    colors: [
-                                        themeManager.accentGold.opacity(0.8),
-                                        themeManager.accentGold.opacity(0.4),
-                                        themeManager.accentGold.opacity(0.1)
-                                    ],
-                                    center: .center,
-                                    startRadius: 5,
-                                    endRadius: 25
-                                )
-                            )
-                            .frame(width: 50, height: 50)
-                            .blur(radius: 2)
-                            .animation(.easeInOut(duration: 0.3), value: isSelected)
-                    }
-                    
-                    // Enhanced icon
-                    Image(systemName: isSelected ? tab.iconName : tab.iconNameUnselected)
-                        .font(.system(size: 20, weight: isSelected ? .semibold : .medium))
-                        .foregroundColor(
-                            isSelected ? 
-                            .white : 
-                            themeManager.tabBarInactiveText
-                        )
-                        .scaleEffect(isPressed ? 0.9 : (isSelected ? 1.1 : 1.0))
-                        .animation(performanceService.shouldReduceAnimations() ? .none : .easeInOut(duration: 0.15), value: isPressed)
-                        .animation(performanceService.getOptimizedSpringAnimation(), value: isSelected)
-                        .shadow(
-                            color: isSelected ? themeManager.accentGold.opacity(0.8) : .clear,
-                            radius: isSelected ? 8 : 0,
-                            x: 0,
-                            y: 0
-                        )
-                }
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .medium))
                 
-                // Enhanced tab label
-                Text(tab.rawValue)
-                    .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
-                    .foregroundColor(
-                        isSelected ? 
-                        themeManager.accentGold : 
-                        themeManager.tabBarInactiveText
-                    )
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .shadow(
-                        color: isSelected ? themeManager.accentGold.opacity(0.6) : .clear,
-                        radius: isSelected ? 4 : 0,
-                        x: 0,
-                        y: 0
-                    )
+                Text(title)
+                    .font(.geist(14, weight: .medium))
             }
-            .frame(minWidth: 56)
-            .padding(.horizontal, 8)
+            .foregroundColor(isSelected ? themeManager.businessAccent : themeManager.businessSecondaryText)
+            .padding(.horizontal, 16)
             .padding(.vertical, 8)
-        }
-        .buttonStyle(PlainButtonStyle())
-        .scaleEffect(isPressed ? 0.95 : 1.0)
-        .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
-            withAnimation(performanceService.shouldReduceAnimations() ? .none : .easeInOut(duration: 0.1)) {
-                isPressed = pressing
-            }
-        }, perform: {})
-        .animation(performanceService.getOptimizedSpringAnimation(), value: isSelected)
-    }
-}
-
-// MARK: - Host Parties View
-struct HostPartiesView: View {
-    @StateObject private var partyManager = PartyManager.shared
-    @State private var showingCreateParty = false
-    
-    var body: some View {
-        NavigationView {
-            VStack {
-                if partyManager.hostParties.isEmpty {
-                    // Empty state
-                    VStack(spacing: 24) {
-                        Image(systemName: "party.popper")
-                            .font(.system(size: 64))
-                            .foregroundColor(.gray)
-                        
-                        Text("No Parties Yet")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        Text("Create your first party to get started with hosting!")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                        
-                        Button("Create Party") {
-                            showingCreateParty = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                    .padding()
-                } else {
-                    // Party list
-                    ScrollView {
-                        LazyVStack(spacing: 16) {
-                            ForEach(partyManager.hostParties) { party in
-                                HostPartyManagementCard(party: party)
-                            }
-                        }
-                        .padding()
-                    }
-                }
-            }
-            .navigationTitle("🎉 My Parties")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showingCreateParty = true }) {
-                        Image(systemName: "plus")
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $showingCreateParty) {
-            PartyCreationView()
-        }
-        .sheet(isPresented: $partyManager.showingPartyCreation) {
-            PartyCreationView()
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(isSelected ? color : themeManager.businessCardBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20)
+                            .stroke(isSelected ? color : themeManager.businessBorder, lineWidth: 1)
+                    )
+            )
         }
     }
 }
 
-// MARK: - Host Party Management Card
-struct HostPartyManagementCard: View {
+// MARK: - Host Party Card Component  
+struct HostPartyCard: View {
     let party: Party
-    @State private var showingDetails = false
+    let onTap: () -> Void
+    
+    @StateObject private var themeManager = ThemeManager.shared
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header
+            // Header with status
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(party.title)
-                        .font(.headline)
-                        .fontWeight(.bold)
+                        .font(.geist(20, weight: .bold))
+                        .foregroundColor(themeManager.businessText)
+                        .lineLimit(2)
                     
                     Text(party.location.name)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .font(.geist(14, weight: .medium))
+                        .foregroundColor(themeManager.businessSecondaryText)
                 }
                 
                 Spacer()
                 
-                // Status badge
-                Text(party.status.rawValue.capitalized)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(statusColor.opacity(0.2))
-                    .foregroundColor(statusColor)
-                    .cornerRadius(8)
+                StatusBadge(status: party.status)
             }
             
-            // Metrics
-            HStack(spacing: 24) {
-                VStack(spacing: 4) {
-                    Text("\(party.currentAttendees)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Text("RSVPs")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            // Event details
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 16) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "calendar")
+                            .foregroundColor(themeManager.businessPrimary)
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text(formatDate(party.startDate))
+                            .font(.geist(14, weight: .medium))
+                            .foregroundColor(themeManager.businessText)
+                    }
+                    
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.2")
+                            .foregroundColor(themeManager.businessInfo)
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text("\(party.currentAttendees)/\(party.guestCap)")
+                            .font(.geist(14, weight: .medium))
+                            .foregroundColor(themeManager.businessText)
+                    }
                 }
                 
-                VStack(spacing: 4) {
-                    Text("\(party.guestCap)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Text("Capacity")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                if !party.tags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(party.tags.prefix(3), id: \.self) { tag in
+                                Text(tag)
+                                    .font(.geist(12, weight: .medium))
+                                    .foregroundColor(themeManager.businessSecondaryText)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        Capsule()
+                                            .fill(themeManager.businessPrimary.opacity(0.1))
+                                    )
+                            }
+                        }
+                    }
                 }
-                
-                VStack(spacing: 4) {
-                    Text("\(Int((Double(party.currentAttendees) / Double(party.guestCap)) * 100))%")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Text("Full")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
             }
             
-            // Date
-            HStack {
-                Image(systemName: "calendar")
-                    .foregroundColor(.secondary)
-                Text(formatDate(party.startDate))
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+            // Action buttons
+            HStack(spacing: 12) {
+                Button("View Details") {
+                    onTap()
+                }
+                .font(.geist(14, weight: .semibold))
+                .foregroundColor(themeManager.businessText)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(themeManager.businessCardBackground)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(themeManager.businessBorder, lineWidth: 1)
+                        )
+                )
                 
                 Spacer()
                 
-                Button("Manage") {
-                    showingDetails = true
+                if party.status == .upcoming {
+                    Button("Edit") {
+                        // TODO: Navigate to edit view
+                    }
+                    .font(.geist(14, weight: .semibold))
+                    .foregroundColor(themeManager.businessAccent)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(themeManager.businessPrimary)
+                    )
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
         }
-        .padding()
-        .background(.ultraThinMaterial)
-        .cornerRadius(16)
-        .sheet(isPresented: $showingDetails) {
-            PartyDetailView(party: party)
-        }
-    }
-    
-    private var statusColor: Color {
-        switch party.status {
-        case .upcoming: return .blue
-        case .live: return .green
-        case .ended: return .gray
-        case .cancelled: return .red
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(themeManager.businessCardBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(themeManager.businessBorder, lineWidth: 1)
+                )
+        )
+        .shadow(
+            color: themeManager.businessShadow.opacity(0.1),
+            radius: 8,
+            x: 0,
+            y: 4
+        )
+        .onTapGesture {
+            onTap()
         }
     }
     
@@ -1046,6 +1282,47 @@ struct HostPartyManagementCard: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - Status Badge Component
+struct StatusBadge: View {
+    let status: Party.PartyStatus
+    
+    @StateObject private var themeManager = ThemeManager.shared
+    
+    var statusConfig: (color: Color, icon: String, text: String) {
+        switch status {
+        case .upcoming:
+            return (themeManager.businessWarning, "clock", "Upcoming")
+        case .live:
+            return (themeManager.businessSuccess, "dot.radiowaves.left.and.right", "Live")
+        case .ended:
+            return (themeManager.businessSecondaryText, "checkmark.circle", "Ended")
+        case .cancelled:
+            return (themeManager.businessDanger, "xmark.circle", "Cancelled")
+        }
+    }
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: statusConfig.icon)
+                .font(.system(size: 12, weight: .medium))
+            
+            Text(statusConfig.text)
+                .font(.geist(12, weight: .semibold))
+        }
+        .foregroundColor(statusConfig.color)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(statusConfig.color.opacity(0.1))
+                .overlay(
+                    Capsule()
+                        .stroke(statusConfig.color.opacity(0.3), lineWidth: 1)
+                )
+        )
     }
 }
 
