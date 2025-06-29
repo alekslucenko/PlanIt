@@ -1,5 +1,7 @@
 import SwiftUI
 import CoreLocation
+import Firebase
+import FirebaseAuth
 
 // MARK: - Professional Main Tab View
 struct ModernMainTabView: View, Equatable {
@@ -246,8 +248,9 @@ struct ModernMainTabView: View, Equatable {
             VStack(spacing: 0) {
                 // HOST MODE NAVIGATION
                 TabView(selection: $selectedHostTab) {
-                    // Host Dashboard - CONSOLIDATED ANALYTICS
-                    HostAnalyticsView()
+                    // Host Dashboard - MAGICPATH BUSINESS ANALYTICS
+                    BusinessDashboardView()
+                        .environmentObject(partyManager)
                         .tag(HostTabItem.dashboard)
                     
                     // Party Management
@@ -1176,7 +1179,7 @@ struct HostPartyCard: View {
                 
                 Spacer()
                 
-                StatusBadge(status: party.status)
+                MainStatusBadge(status: party.status)
             }
             
             // Event details
@@ -1285,8 +1288,8 @@ struct HostPartyCard: View {
     }
 }
 
-// MARK: - Status Badge Component
-struct StatusBadge: View {
+// MARK: - Main Status Badge Component
+struct MainStatusBadge: View {
     let status: Party.PartyStatus
     
     @StateObject private var themeManager = ThemeManager.shared

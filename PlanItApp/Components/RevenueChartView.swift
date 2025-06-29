@@ -133,19 +133,21 @@ struct RevenueChartView: View {
     }
     
     private var revenueChart: some View {
-        Chart(filteredData) { dataPoint in
-            LineMark(
-                x: .value("Date", dataPoint.date, unit: .day),
-                y: .value("Revenue", animateChart ? dataPoint.value : 0)
-            )
-            .foregroundStyle(lineGradient)
-            .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-            
-            AreaMark(
-                x: .value("Date", dataPoint.date, unit: .day),
-                y: .value("Revenue", animateChart ? dataPoint.value : 0)
-            )
-            .foregroundStyle(areaGradient)
+        Chart {
+            ForEach(filteredData) { dataPoint in
+                LineMark(
+                    x: .value("Date", dataPoint.date, unit: .day),
+                    y: .value("Revenue", animateChart ? dataPoint.revenue : 0)
+                )
+                .foregroundStyle(lineGradient)
+                .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                
+                AreaMark(
+                    x: .value("Date", dataPoint.date, unit: .day),
+                    y: .value("Revenue", animateChart ? dataPoint.revenue : 0)
+                )
+                .foregroundStyle(areaGradient)
+            }
         }
         .chartXAxis {
             AxisMarks(preset: .extended, position: .bottom) { value in

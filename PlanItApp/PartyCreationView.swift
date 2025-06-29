@@ -177,14 +177,16 @@ struct PartyCreationView: View {
                         
                         HStack {
                             Button(action: {
-                                if guestCap > 10 {
-                                    guestCap -= 10
+                                // Enforce minimum capacity of 1
+                                if guestCap > 1 {
+                                    guestCap = max(1, guestCap - 10)
                                 }
                             }) {
                                 Image(systemName: "minus.circle.fill")
                                     .font(.title2)
-                                    .foregroundColor(themeManager.travelBlue)
+                                    .foregroundColor(guestCap > 1 ? themeManager.travelBlue : .gray)
                             }
+                            .disabled(guestCap <= 1)
                             
                             Text("\(guestCap)")
                                 .font(.title2)
@@ -200,6 +202,12 @@ struct PartyCreationView: View {
                                     .foregroundColor(themeManager.travelBlue)
                             }
                         }
+                        
+                        Text("Minimum capacity: 1 guest")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                            .opacity(guestCap <= 10 ? 1.0 : 0.0)
+                            .animation(.easeInOut(duration: 0.3), value: guestCap)
                     }
                     
                     Toggle("Public Event", isOn: $isPublic)
@@ -499,7 +507,7 @@ struct PartyCreationView: View {
                !description.isEmpty && 
                selectedLocation != nil && 
                startDate < endDate &&
-               guestCap > 0
+               guestCap >= 1  // Enforce minimum capacity of 1
     }
     
     private func createParty() {

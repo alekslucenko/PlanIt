@@ -2,30 +2,11 @@ import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
 
-// MARK: - New Customers Sheet View
+// MARK: - New Customers Sheet
 struct NewCustomersSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var newCustomers: [AppUser] = []
-    @State private var isLoading = true
-    @State private var timeframe: TimeFrame = .thisWeek
-    
-    private let db = Firestore.firestore()
-    
-    enum TimeFrame: String, CaseIterable {
-        case thisWeek = "This Week"
-        case thisMonth = "This Month"
-        case lastMonth = "Last Month"
-        case allTime = "All Time"
-        
-        var days: Int {
-            switch self {
-            case .thisWeek: return 7
-            case .thisMonth: return 30
-            case .lastMonth: return 60
-            case .allTime: return 365
-            }
-        }
-    }
+    @StateObject private var customerService = CustomerAnalyticsService.shared
+    @State private var selectedTimeframe: HostAnalyticsService.Timeframe = .thisMonth
     
     var body: some View {
         NavigationView {
@@ -34,7 +15,7 @@ struct NewCustomersSheet: View {
                 LinearGradient(
                     gradient: Gradient(colors: [
                         Color.black,
-                        Color.purple.opacity(0.3)
+                        Color.blue.opacity(0.3)
                     ]),
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -44,10 +25,9 @@ struct NewCustomersSheet: View {
                 VStack(spacing: 0) {
                     // Header
                     headerSection
+                        .padding(.top, 40) // Push header down for visibility
                     
-                    if isLoading {
-                        loadingSection
-                    } else if newCustomers.isEmpty {
+                    if customerService.newCustomersThisMonth.isEmpty {
                         emptyStateSection
                     } else {
                         contentSection
@@ -55,129 +35,103 @@ struct NewCustomersSheet: View {
                 }
             }
         }
-        .onAppear {
-            loadNewCustomerData()
-        }
     }
     
     private var headerSection: some View {
         VStack(spacing: 16) {
             HStack {
-                Button("Close") {
-                    dismiss()
+                // Futuristic close button
+                Button(action: { dismiss() }) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.1))
+                            .frame(width: 32, height: 32)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                            )
+                        
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
                 }
-                .font(.geist(16, weight: .medium))
-                .foregroundColor(.white.opacity(0.8))
+                .buttonStyle(PlainButtonStyle())
                 
                 Spacer()
                 
                 VStack(spacing: 4) {
                     Text("New Customers")
-                        .font(.geist(20, weight: .bold))
+                        .font(.inter(20, weight: .bold))
                         .foregroundColor(.white)
                     
-                    Text("First-time buyers")
-                        .font(.geist(12, weight: .medium))
+                    Text("paying customers & RSVPs")
+                        .font(.inter(12, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
                 }
                 
                 Spacer()
                 
-                Button(action: {}) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white.opacity(0.8))
-                }
+                // Spacer to balance the layout (replaces export button)
+                Color.clear.frame(width: 32, height: 32)
             }
             
-            // Time Filter
-            HStack(spacing: 0) {
-                ForEach(TimeFrame.allCases, id: \.self) { frame in
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            timeframe = frame
-                            loadNewCustomerData()
+            // Current Value Display
+            VStack(spacing: 8) {
+                Text("\(customerService.getCustomersForTimeframe(selectedTimeframe).count)")
+                    .font(.inter(36, weight: .bold))
+                    .foregroundColor(.blue)
+                
+                Text("+\(customerService.getCustomersForTimeframe(selectedTimeframe).count) this \(selectedTimeframe.rawValue.lowercased())")
+                    .font(.inter(14, weight: .medium))
+                    .foregroundColor(.blue.opacity(0.8))
+            }
+            
+            // Timeframe selector
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(HostAnalyticsService.Timeframe.allCases, id: \.self) { timeframe in
+                        Button(timeframe.rawValue) {
+                            selectedTimeframe = timeframe
                         }
-                    }) {
-                        Text(frame.rawValue)
-                            .font(.geist(12, weight: .medium))
-                            .foregroundColor(timeframe == frame ? .black : .white.opacity(0.7))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(timeframe == frame ? .white : Color.clear)
-                            )
+                        .font(.inter(11, weight: .medium))
+                        .foregroundColor(selectedTimeframe == timeframe ? .black : .white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(selectedTimeframe == timeframe ? .white : Color.white.opacity(0.1))
+                        )
                     }
                 }
+                .padding(.horizontal, 20)
             }
-            .padding(4)
+            .padding()
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 16)
                     .fill(Color.white.opacity(0.1))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                    )
-            )
-            
-            // Summary Stats
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("New Customers")
-                        .font(.geist(14, weight: .medium))
-                        .foregroundColor(.white.opacity(0.7))
-                    
-                    Text("\(newCustomers.count)")
-                        .font(.geist(28, weight: .bold))
-                        .foregroundColor(.purple)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "person.badge.plus")
-                    .font(.system(size: 40))
-                    .foregroundColor(.purple)
-            }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.1))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
                     )
             )
         }
         .padding(.horizontal, 20)
-        .padding(.top, 20)
-    }
-    
-    private var loadingSection: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-                .scaleEffect(1.2)
-                .tint(.white)
-            
-            Text("Loading customer data...")
-                .font(.geist(16, weight: .medium))
-                .foregroundColor(.white.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.bottom, 20)
     }
     
     private var emptyStateSection: some View {
         VStack(spacing: 16) {
-            Image(systemName: "person.crop.circle.badge.plus")
+            Image(systemName: "person.badge.plus")
                 .font(.system(size: 64, weight: .light))
                 .foregroundColor(.white.opacity(0.3))
             
             Text("No New Customers")
-                .font(.geist(24, weight: .bold))
+                .font(.inter(24, weight: .bold))
                 .foregroundColor(.white)
             
-            Text("New customers will appear here when they make their first purchase.")
-                .font(.geist(14, weight: .medium))
+            Text("New customer data will appear here when users RSVP or purchase tickets to your events.")
+                .font(.inter(14, weight: .medium))
                 .foregroundColor(.white.opacity(0.6))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
@@ -186,150 +140,145 @@ struct NewCustomersSheet: View {
     }
     
     private var contentSection: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(newCustomers.sorted { 
-                    $0.createdAt > $1.createdAt
-                }) { customer in
-                    CustomerItemView(customer: customer)
-                }
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "person.3.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.blue)
+                
+                Text("New Customers")
+                    .font(.inter(16, weight: .bold))
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                Text("\(customerService.getCustomersForTimeframe(selectedTimeframe).count) customers")
+                    .font(.inter(12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 100)
-        }
-        .padding(.top, 20)
-    }
-    
-    private func loadNewCustomerData() {
-        guard Auth.auth().currentUser?.uid != nil else {
-            isLoading = false
-            return
-        }
-        
-        let calendar = Calendar.current
-        let endDate = Date()
-        let startDate = calendar.date(byAdding: .day, value: -timeframe.days, to: endDate) ?? endDate
-        
-        db.collection("users")
-            .whereField("createdAt", isGreaterThan: startDate)
-            .whereField("createdAt", isLessThan: endDate)
-            .addSnapshotListener { snapshot, error in
-                DispatchQueue.main.async {
-                    if let error = error {
-                        print("❌ Error loading new customer data: \(error)")
-                        self.isLoading = false
-                        return
+            
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(customerService.getCustomersForTimeframe(selectedTimeframe)) { customer in
+                        EnhancedCustomerRow(customer: customer)
                     }
-                    
-                    guard let documents = snapshot?.documents else {
-                        self.isLoading = false
-                        return
-                    }
-                    
-                    self.newCustomers = documents.compactMap { doc in
-                        try? doc.data(as: AppUser.self)
-                    }
-                    
-                    self.isLoading = false
                 }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 100)
             }
+        }
+        .padding(.top, 10)
+        .onAppear {
+            if let userId = Auth.auth().currentUser?.uid {
+                customerService.startTrackingForHost(userId)
+            }
+        }
     }
 }
 
-// MARK: - Customer Item View
-struct CustomerItemView: View {
-    let customer: AppUser
-    
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
-    
-    private func formatRelativeDate(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
-    }
+// MARK: - Enhanced Customer Row
+struct EnhancedCustomerRow: View {
+    let customer: CustomerAnalyticsService.PayingCustomer
     
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             // Customer Avatar
-            ZStack {
-                Circle()
-                    .fill(Color.purple.opacity(0.2))
-                    .frame(width: 44, height: 44)
-                
-                if let photoURL = customer.photoURL, !photoURL.isEmpty {
-                    AsyncImage(url: URL(string: photoURL)) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundColor(.purple)
-                    }
-                    .frame(width: 44, height: 44)
-                    .clipShape(Circle())
-                } else {
-                    Image(systemName: "person.fill")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(.purple)
-                }
-            }
+            Circle()
+                .fill(customer.customerValue.color.opacity(0.2))
+                .frame(width: 40, height: 40)
+                .overlay(
+                    Text(String(customer.name.prefix(1).uppercased()))
+                        .font(.inter(16, weight: .bold))
+                        .foregroundColor(customer.customerValue.color)
+                )
             
-            // Customer Details
-            VStack(alignment: .leading, spacing: 4) {
-                Text(customer.displayName)
-                    .font(.geist(16, weight: .semibold))
-                    .foregroundColor(.white)
+            // Customer Info
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(customer.name)
+                        .font(.inter(14, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    
+                    if customer.isNewCustomer {
+                        Text("NEW")
+                            .font(.inter(8, weight: .bold))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule()
+                                    .fill(Color.green.opacity(0.2))
+                            )
+                    }
+                }
                 
                 Text(customer.email)
-                    .font(.geist(14, weight: .medium))
+                    .font(.inter(12, weight: .medium))
                     .foregroundColor(.white.opacity(0.7))
                     .lineLimit(1)
                 
-                Text("Joined \(formatRelativeDate(customer.createdAt))")
-                    .font(.geist(12, weight: .medium))
-                    .foregroundColor(.white.opacity(0.5))
+                HStack {
+                    Text("\(customer.totalTicketsPurchased) tickets")
+                        .font(.inter(10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                    
+                    Text("•")
+                        .foregroundColor(.white.opacity(0.4))
+                    
+                    Text("\(customer.eventsAttended) events")
+                        .font(.inter(10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                }
             }
             
             Spacer()
             
-            // New Customer Badge
-            VStack(alignment: .trailing, spacing: 4) {
-                HStack(spacing: 4) {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.yellow)
+            // Amount Spent & Customer Value
+            VStack(alignment: .trailing, spacing: 2) {
+                if customer.totalSpent > 0 {
+                    Text("$\(String(format: "%.0f", customer.totalSpent))")
+                        .font(.inter(14, weight: .bold))
+                        .foregroundColor(.green)
                     
-                    Text("NEW")
-                        .font(.geist(10, weight: .bold))
-                        .foregroundColor(.yellow)
-                        .textCase(.uppercase)
+                    Text("total spent")
+                        .font(.inter(9, weight: .medium))
+                        .foregroundColor(.green.opacity(0.7))
+                } else {
+                    Text("RSVP Only")
+                        .font(.inter(12, weight: .bold))
+                        .foregroundColor(.blue)
+                    
+                    Text("no purchase")
+                        .font(.inter(9, weight: .medium))
+                        .foregroundColor(.blue.opacity(0.7))
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule()
-                        .fill(Color.yellow.opacity(0.2))
-                )
                 
-                Text("Level \(customer.userXP.level)")
-                    .font(.geist(12, weight: .medium))
-                    .foregroundColor(.white.opacity(0.6))
+                Text(customer.customerValue.rawValue)
+                    .font(.inter(8, weight: .semibold))
+                    .foregroundColor(customer.customerValue.color)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(customer.customerValue.color.opacity(0.1))
+                    )
             }
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(Color.white.opacity(0.08))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(customer.customerValue.color.opacity(0.3), lineWidth: 1)
                 )
         )
     }
+}
+
+#Preview {
+    NewCustomersSheet()
 } 

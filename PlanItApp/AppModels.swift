@@ -2368,6 +2368,14 @@ struct Party: Identifiable, Codable, Equatable {
     var capacityValue: Int { capacity ?? guestCap }
     let attendees: [PartyAttendee]
     
+    // Computed property to provide images array for compatibility
+    var images: [String] {
+        if let flyerURL = flyerImageURL, !flyerURL.isEmpty {
+            return [flyerURL]
+        }
+        return []
+    }
+    
     enum PartyStatus: String, Codable, CaseIterable {
         case upcoming = "upcoming"
         case live = "live"

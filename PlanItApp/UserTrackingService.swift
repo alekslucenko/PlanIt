@@ -617,15 +617,14 @@ final class UserTrackingService: ObservableObject {
             // Use batched writes for performance
             let batch = db.batch()
             
-            // Update user document
+            // Update user document with ONLY lightweight counters to avoid exceeding document size limits
             let userRef = db.collection("users").document(uid)
             batch.updateData([
-                "interactionLogs": FieldValue.arrayUnion([data]),
                 "lastActiveAt": FieldValue.serverTimestamp(),
                 "totalInteractions": FieldValue.increment(Int64(1))
             ], forDocument: userRef)
             
-            // Store in detailed analytics collection
+            // Store the rich interaction payload in a dedicated subcollection instead of the root user document
             let analyticsRef = db.collection("userAnalytics")
                 .document(uid)
                 .collection("interactions")

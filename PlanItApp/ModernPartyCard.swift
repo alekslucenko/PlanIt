@@ -12,6 +12,8 @@ struct ModernPartyCard: View {
     let onFullRSVP: () -> Void
     
     @StateObject private var themeManager = ThemeManager.shared
+    @StateObject private var clickTracker = ClickTrackingService.shared
+    @EnvironmentObject var authService: AuthenticationService
     @State private var isPressed = false
     
     var timeUntilParty: String {
@@ -63,7 +65,15 @@ struct ModernPartyCard: View {
     }
     
     var body: some View {
-        Button(action: onTap) {
+        Button(action: {
+            // Track the click before executing the original action
+            Task {
+                if let user = authService.user {
+                    await clickTracker.trackPartyCardClick(party: party, user: user)
+                }
+            }
+            onTap()
+        }) {
             VStack(spacing: 0) {
                 // Header with status indicators
                 VStack(spacing: 8) {

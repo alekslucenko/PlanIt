@@ -1099,4 +1099,301 @@ struct CompactPartyCard: View {
         formatter.dateStyle = .short
         return formatter.string(from: date)
     }
-} 
+}
+
+// MARK: - EventDetailView Component
+struct EventDetailView: View {
+    let party: Party
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Header with image
+                        eventHeaderSection
+                        
+                        // Event details
+                        eventDetailsSection
+                        
+                        // Analytics section
+                        eventAnalyticsSection
+                        
+                        // Attendees section
+                        eventAttendeesSection
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 100)
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .foregroundColor(.white)
+                }
+                
+                ToolbarItem(placement: .principal) {
+                    Text("Event Details")
+                        .font(.inter(18, weight: .bold))
+                        .foregroundColor(.white)
+                }
+            }
+        }
+    }
+    
+    private var eventHeaderSection: some View {
+        VStack(spacing: 16) {
+            // Event image
+            if let imageUrl = party.images.first, !imageUrl.isEmpty {
+                AsyncImage(url: URL(string: imageUrl)) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 200)
+                        .clipped()
+                        .cornerRadius(12)
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(LinearGradient(
+                            colors: [Color.purple.opacity(0.3), Color.orange.opacity(0.3)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                        .frame(height: 200)
+                        .overlay(
+                            Image(systemName: "party.popper.fill")
+                                .font(.system(size: 48, weight: .light))
+                                .foregroundColor(.white.opacity(0.6))
+                        )
+                }
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(LinearGradient(
+                        colors: [Color.purple.opacity(0.3), Color.orange.opacity(0.3)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+                    .frame(height: 200)
+                    .overlay(
+                        Image(systemName: "party.popper.fill")
+                            .font(.system(size: 48, weight: .light))
+                            .foregroundColor(.white.opacity(0.6))
+                    )
+            }
+            
+            // Title and status
+            VStack(spacing: 8) {
+                Text(party.title)
+                    .font(.inter(24, weight: .bold))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                
+                MainStatusBadge(status: party.status)
+            }
+        }
+    }
+    
+    private var eventDetailsSection: some View {
+        VStack(spacing: 16) {
+            DetailCard(
+                title: "Description",
+                content: party.description,
+                icon: "text.alignleft"
+            )
+            
+            DetailCard(
+                title: "Location",
+                content: party.location.name + "\n" + party.location.fullAddress,
+                icon: "location.fill"
+            )
+            
+            DetailCard(
+                title: "Date & Time",
+                content: formatEventDateTime(),
+                icon: "calendar"
+            )
+            
+            DetailCard(
+                title: "Capacity",
+                content: "\(party.currentAttendees) / \(party.capacityValue) attendees",
+                icon: "person.3.fill"
+            )
+        }
+    }
+    
+    private var eventAnalyticsSection: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Event Analytics")
+                    .font(.inter(18, weight: .bold))
+                    .foregroundColor(.white)
+                
+                Spacer()
+            }
+            
+            HStack(spacing: 12) {
+                StatMiniCard(
+                    title: "Views",
+                    value: "\(party.viewCount ?? 0)",
+                    icon: "eye.fill",
+                    color: .blue
+                )
+                
+                StatMiniCard(
+                    title: "Revenue",
+                    value: "$\(String(format: "%.0f", calculateRevenue()))",
+                    icon: "dollarsign.circle.fill",
+                    color: .green
+                )
+                
+                StatMiniCard(
+                    title: "Clicks",
+                    value: "\(party.clickCount ?? 0)",
+                    icon: "hand.tap.fill",
+                    color: .purple
+                )
+            }
+        }
+    }
+    
+    private var eventAttendeesSection: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Recent Attendees")
+                    .font(.inter(18, weight: .bold))
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                Text("\(party.attendees.count) total")
+                    .font(.inter(14, weight: .medium))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            
+            if party.attendees.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "person.3.fill")
+                        .font(.system(size: 32, weight: .light))
+                        .foregroundColor(.white.opacity(0.4))
+                    
+                    Text("No attendees yet")
+                        .font(.inter(14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                .frame(height: 80)
+            } else {
+                LazyVStack(spacing: 8) {
+                    ForEach(party.attendees.prefix(5)) { attendee in
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(LinearGradient(
+                                    colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.3)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ))
+                                .frame(width: 32, height: 32)
+                                .overlay(
+                                    Text(String(attendee.userName.prefix(1).uppercased()))
+                                        .font(.inter(12, weight: .bold))
+                                        .foregroundColor(.white)
+                                )
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(attendee.userName)
+                                    .font(.inter(14, weight: .medium))
+                                    .foregroundColor(.white)
+                                
+                                Text("Joined \(formatJoinDate(attendee.joinedAt))")
+                                    .font(.inter(11, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.6))
+                            }
+                            
+                            Spacer()
+                        }
+                        .padding(8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.05))
+                        )
+                    }
+                    
+                    if party.attendees.count > 5 {
+                        Text("+ \(party.attendees.count - 5) more attendees")
+                            .font(.inter(12, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                            .padding(.top, 8)
+                    }
+                }
+            }
+        }
+    }
+    
+    private func formatEventDateTime() -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .full
+        formatter.timeStyle = .short
+        
+        let startString = formatter.string(from: party.startDate)
+        
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+        let endString = timeFormatter.string(from: party.endDate)
+        
+        return "\(startString)\nUntil \(endString)"
+    }
+    
+    private func calculateRevenue() -> Double {
+        return party.ticketTiers.reduce(0.0) { $0 + ($1.price * Double($1.soldCount)) }
+    }
+    
+    private func formatJoinDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+// MARK: - Supporting Views
+struct DetailCard: View {
+    let title: String
+    let content: String
+    let icon: String
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.blue)
+                
+                Text(title)
+                    .font(.inter(16, weight: .bold))
+                    .foregroundColor(.white)
+                
+                Spacer()
+            }
+            
+            Text(content)
+                .font(.inter(14, weight: .medium))
+                .foregroundColor(.white.opacity(0.8))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+}
+

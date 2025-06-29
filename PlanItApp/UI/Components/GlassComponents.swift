@@ -100,13 +100,15 @@ struct DailyLineChartView: View {
         self.accent = accent
     }
     var body: some View {
-        Chart(points) { pt in
-            LineMark(x: .value("Day", pt.date), y: .value("Value", pt.value))
-                .foregroundStyle(accent)
-                .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-            AreaMark(x: .value("Day", pt.date), y: .value("Value", pt.value))
-                .interpolationMethod(.catmullRom)
-                .foregroundStyle(accent.opacity(0.2).gradient)
+        Chart {
+            ForEach(points) { pt in
+                LineMark(x: .value("Day", pt.date), y: .value("Revenue", pt.revenue))
+                    .foregroundStyle(accent)
+                    .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                AreaMark(x: .value("Day", pt.date), y: .value("Revenue", pt.revenue))
+                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(accent.opacity(0.2).gradient)
+            }
         }
         .chartOverlay { proxy in
             GeometryReader { geo in
@@ -133,7 +135,7 @@ struct DailyLineChartView: View {
                     Text(sel.date, style: .date)
                         .font(.geist(11))
                         .foregroundColor(.secondary)
-                    Text("$"+String(format: "%.0f", sel.value))
+                    Text("$"+String(format: "%.0f", sel.revenue))
                         .font(.geist(13, weight: .semibold))
                 }
                 .padding(6)
